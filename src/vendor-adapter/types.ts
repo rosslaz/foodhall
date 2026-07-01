@@ -48,6 +48,13 @@ export interface VendorProduct {
   prepSeconds: number | null;
 }
 
+// Result of reading a location's catalog for menu import: the location's own
+// name (used as the default vendor name) plus its orderable products.
+export interface VendorCatalog {
+  locationName: string | null;
+  products: VendorProduct[];
+}
+
 export interface VendorAdapter {
   readonly name: string;
   // True: the platform holds scheduled orders and fires them itself; we submit
@@ -60,7 +67,7 @@ export interface VendorAdapter {
   getTicketStatus(externalOrderId: string): Promise<VendorTicketStatus>;
   // Cancel a ticket if still cancellable.
   cancelTicket(externalOrderId: string): Promise<void>;
-  // List the orderable products for a location, for menu onboarding/import.
+  // Read a location's name + orderable products, for menu onboarding/import.
   // This is a READ — unblocked even while submitTicket is not (see gotab.ts).
-  listProducts(locationUuid: string): Promise<VendorProduct[]>;
+  listProducts(locationUuid: string): Promise<VendorCatalog>;
 }

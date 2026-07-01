@@ -142,11 +142,17 @@ submit/settlement fork — and it's the first time the *app itself* (not curl in
 PowerShell) calls GoTab. Verified end-to-end against the real Konjo sandbox
 (4 items pulled, priced, flagged), not just the mock.
 
-- **Adapter:** `listProducts(locationUuid)` added to the `VendorAdapter`
-  interface + mock + real `gotab.ts`. Real impl runs the confirmed GraphQL
-  `productsList` query, filters `productType == CUSTOM` (back-office payment
-  instruments) and non-orderable items, maps `basePrice`→cents and
-  `prepTime` (minutes) → seconds.
+- `VendorAdapter.listProducts(locationUuid)` — on the interface, mock, and real
+  `gotab.ts`. Returns `{ locationName, products }`. Real impl: one GraphQL query
+  fetching the location `name` + `productsList`, filters `productType == CUSTOM`
+  (back-office payment instruments like "Cash Payment") and non-orderable items,
+  maps `basePrice`→cents and `prepTime` (minutes) → seconds.
+- **Vendor name auto-populates from GoTab.** The import reads the location's own
+  name and uses it as the vendor name by default; the admin's name field is an
+  optional OVERRIDE (blank = GoTab's name). Matters because GoTab location names
+  carry the parent hierarchy (Konjo imports as "Konjo Me Sandbox - Detroit
+  Shipping Sandbox"), which an operator will usually want to shorten for the
+  customer-facing menu ("Konjo Me"). Both paths verified against live Konjo.
 - **Import always talks to REAL GoTab even in mock fire-mode.** New
   `getImportAdapter()` factory returns the real adapter whenever GoTab creds
   exist, regardless of `VENDOR_ADAPTER` — because importing (read) is unblocked

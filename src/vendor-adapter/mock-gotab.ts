@@ -4,6 +4,7 @@ import type {
   SubmitTicketRequest,
   SubmitTicketResult,
   VendorAdapter,
+  VendorCatalog,
   VendorProduct,
   VendorTicketStatus,
 } from './types.js';
@@ -106,12 +107,13 @@ export class MockGoTabAdapter implements VendorAdapter {
   // "needs a prep time" path the real sandbox produces (GoTab prepTime is
   // usually blank). The locationUuid is echoed into the product ids so repeated
   // imports of the same mock location are idempotent (stable uuids).
-  async listProducts(locationUuid: string): Promise<VendorProduct[]> {
+  async listProducts(locationUuid: string): Promise<VendorCatalog> {
     const tag = locationUuid.slice(0, 6);
-    return [
+    const products: VendorProduct[] = [
       { gotabProductUuid: `mockprd_${tag}_burger`, name: 'Smash Burger', priceCents: 1200, prepSeconds: 480 },
       { gotabProductUuid: `mockprd_${tag}_fries`, name: 'Fries', priceCents: 500, prepSeconds: 240 },
       { gotabProductUuid: `mockprd_${tag}_shake`, name: 'Milkshake', priceCents: 700, prepSeconds: null },
     ];
+    return { locationName: `Mock Vendor ${tag}`, products };
   }
 }

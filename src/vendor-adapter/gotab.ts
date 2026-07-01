@@ -8,6 +8,7 @@ import type {
   SubmitTicketRequest,
   SubmitTicketResult,
   VendorAdapter,
+  VendorCatalog,
   VendorProduct,
   VendorTicketStatus,
 } from './types.js';
@@ -131,9 +132,10 @@ export class GoTabAdapter implements VendorAdapter {
   //   - prepTime is in MINUTES; ×60 to seconds. Treat both null AND 0 as
   //     "unset" -> null (own prep table is the source of truth; admin fills in).
   //   - orderEnabled/available: skip items not orderable.
-  async listProducts(locationUuid: string): Promise<VendorProduct[]> {
+  async listProducts(locationUuid: string): Promise<VendorCatalog> {
     const query = `query ($loc: String!) {
       location(locationUuid: $loc) {
+        name
         productsList {
           name
           productUuid
@@ -147,6 +149,7 @@ export class GoTabAdapter implements VendorAdapter {
     }`;
     const data = await this.client.graph<{
       location: {
+        name: string | null;
         productsList: Array<{
           name: string;
           productUuid: string;
@@ -179,6 +182,6 @@ export class GoTabAdapter implements VendorAdapter {
       { locationUuid, total: list.length, imported: products.length },
       'listed GoTab products for import',
     );
-    return products;
+    return { locationName: data.location?.name ?? null, products };
   }
 }

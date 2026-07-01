@@ -606,6 +606,80 @@ regression test: body-less, header-less POST `/lock` must return 200.
 
 Int tests were typechecked but could not be RUN in the sandbox (Prisma engines can't download there) — first local run was the real verification. **Status: after the job-id and body-less-POST fixes, the full suite passes 10/10 locally (2026-06-12)** — lifecycle, races, timeout/DROPPED semantics, idempotency, redrive, the HTTP allowlist, and the body-less `/lock` regression, all against real Postgres + Redis. The should-have tier is complete and verified. `npm run check` chains typecheck → unit → integration as the pre-demo/pre-commit gate.
 
+---
+
+## GoTab menu import — SHIPPED (2026-07-01)
+
+Admin can onboard a vendor by pulling its live catalog from GoTab instead of
+hand-typing the menu. **First time the app itself (not manual PowerShell) calls
+GoTab, and it's verified end-to-end against the real Konjo sandbox** — 4 items
+pulled with real prices, prep-flagged correctly. This is a pure catalog READ, so
+it is UNBLOCKED by the settlement fork that still gates order submission.
+
+**What it does:** enter a GoTab `locationUuid` + vendor name in the admin screen
+→ the app reads that location's products via GraphQL `productsList`, creates the
+vendor and its menu items, and flags items GoTab has no prep time for so the
+admin can set a real one inline.
+
+**Pieces built:**
+- `VendorAdapter.listProducts(locationUuid)` — on the interface, mock, and real
+  `gotab.ts`. Returns `{ locationName, products }` (one GraphQL query fetches the
+  location `name` alongside `productsList`). Filters `productType == CUSTOM`
+  (back-office payment instruments like "Cash Payment") and non-orderable items,
+  maps `basePrice`→cents, `prepTime` (minutes)→seconds.
+- **Vendor name auto-populates from GoTab** — the location's own name is the
+  default; the admin name field is an optional override (blank = use GoTab's).
+  GoTab returns the full hierarchy ("Konjo Me Sandbox - Detroit Shipping
+  Sandbox"), so the override exists for a clean customer-facing name ("Konjo
+  Me"). Both paths verified live.
+- `getImportAdapter()` factory — **import always talks to REAL GoTab when creds
+  exist, regardless of `VENDOR_ADAPTER`.** Rationale: importing is a read
+  (unblocked); firing is a write (blocked). So the app can run the mock fire path
+  while importing real menus. Falls back to mock only when no creds are set.
+- `POST /api/halls/:hallId/vendors/import-gotab` (ADMIN) — upserts vendor by
+  (hall, gotabLocationId) + items in one transaction. Idempotent: re-import
+  matches items by `gotabProductUuid` and updates in place, never duplicating,
+  never clobbering an admin-corrected prep.
+- Schema: `MenuItem.gotabProductUuid` (`@@unique([vendorId, gotabProductUuid])`;
+  Postgres NULLs distinct, so hand-added items coexist) + `MenuItem.prepConfirmed`
+  (default true). Migrations `gotab_product_uuid`, `menu_item_prep_confirmed`.
+- Admin UI: "Import from GoTab" card; per-item editable prep field + save
+  (`PATCH /items/:id`), unconfirmed items shown with a red "needs prep" flag and
+  a blank prep input.
+
+**PREP-TIME HONESTY — the important design call (user-driven correction).** The
+first cut wrote a fabricated 5-min placeholder for items GoTab had no prep for.
+That was wrong: an invented value that looks real is worse than an honest
+absence, and it silently violated this doc's own "treat null/0 as unset" stance.
+Corrected to: store GoTab's ACTUAL value (0 when absent), mark
+`prepConfirmed = false`, and surface it. `PATCH /items/:id` sets
+`prepConfirmed = true` when an admin enters a real prep. Manual-add and
+pre-existing items are confirmed by the column default. Full loop verified:
+import → flagged blank → admin sets real prep → confirmed/available.
+
+**DEFERRED (the correct end state, deliberately NOT rushed):** enforcement. An
+unconfirmed item is still technically orderable — the scheduler would use its 0
+prep and mis-stagger if someone ordered it before an admin fixed it. Making
+`prepConfirmed = false` items non-orderable (likely `prepSeconds Int?` + a
+menu/scheduler guard) touches the tested scheduler core, so it was left as a
+follow-up. `prepConfirmed` is the breadcrumb. This is the "option 1" in the
+roadmap 2.4a note.
+
+**Relationship to the blocker:** none — this is orthogonal to the `submitTicket`
+/ settlement fork. It made vendor onboarding real and exercised the auth + read
+adapter layers against live GoTab for the first time (previously only
+unit-tested), without depending on how the payment question resolves. Unit tests
+still 12/12; typecheck clean.
+
+**Env note (new PC, 2026-07-01):** project moved to
+`C:\Users\rossl\Projects\foodhall`; full setup re-verified green (`npm run
+check`: typecheck + 5 unit + 9 integration — the doc's "10" is a label
+discrepancy; the suite is 9 test cases). Windows Prisma gotcha confirmed: the
+running dev server + worker lock `query_engine-windows.dll.node`, so
+`prisma generate` / `migrate dev` throw EPERM on the engine rename unless BOTH
+node processes are stopped first. Stop server + worker → generate/migrate →
+restart.
+
 
 
 

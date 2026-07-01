@@ -70,7 +70,9 @@ const defaultHallResponseSchema = {
 } as const;
 
 const importGotabSchema = z.object({
-  name: z.string().min(1),
+  // Optional: blank means use GoTab's own location name. Provide a value only to
+  // override GoTab's name (e.g. a cleaner customer-facing name).
+  name: z.string().min(1).optional(),
   gotabLocationId: z.string().min(1),
   // Keep items available but flagged when GoTab has no prep time; the admin
   // sees which need a real prep. This flag lets a caller opt into hiding
@@ -184,9 +186,9 @@ export async function vendorRoutes(app: FastifyInstance) {
       // Pull the catalog from GoTab. Adapter errors (auth, bad location, network)
       // surface as 502 via AppError from the client layer.
       const adapter = getImportAdapter();
-      let products;
+      let catalog;
       try {
-        products = await adapter.listProducts(gotabLocationId);
+        catalog = await adapter.listProducts(gotabLocationId);
       } catch (err) {
         throw badRequest(
           `Could not read products from GoTab for location ${gotabLocationId}: ${
@@ -194,12 +196,16 @@ export async function vendorRoutes(app: FastifyInstance) {
           }`,
         );
       }
+      const products = catalog.products;
       if (products.length === 0) {
         throw badRequest(
           `GoTab returned no orderable products for location ${gotabLocationId}. ` +
             'Check the location id and that it has orderable (non-CUSTOM) products.',
         );
       }
+      // Vendor name: admin's override if given, else GoTab's location name, else
+      // a last-resort fallback so the vendor is never nameless.
+      const vendorName = name ?? catalog.locationName ?? `Vendor ${gotabLocationId.slice(0, 8)}`;
 
       // Upsert the vendor by (hall, gotabLocationId) so re-import reuses it.
       const created = await prisma.$transaction(async (tx) => {
@@ -207,9 +213,9 @@ export async function vendorRoutes(app: FastifyInstance) {
           where: { foodHallId: hallId, gotabLocationId },
         });
         vendor = vendor
-          ? await tx.vendor.update({ where: { id: vendor.id }, data: { name } })
+          ? await tx.vendor.update({ where: { id: vendor.id }, data: { name: vendorName } })
           : await tx.vendor.create({
-              data: { name, gotabLocationId, foodHallId: hallId },
+              data: { name: vendorName, gotabLocationId, foodHallId: hallId },
             });
 
         const items = [];

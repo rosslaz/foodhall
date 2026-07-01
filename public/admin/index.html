@@ -63,7 +63,7 @@
       <strong>Import a vendor menu from GoTab</strong>
       <p class="muted" style="margin:4px 0 10px">Pulls the location's products (name, price, prep time) from GoTab and creates the vendor + menu here. Re-importing updates in place. Items GoTab has no prep time for are flagged — set a real prep time before they'll sync well.</p>
       <div class="row">
-        <input id="importVendorName" placeholder="Vendor name (e.g. Konjo Me)" style="width:200px" />
+        <input id="importVendorName" placeholder="Vendor name (optional — defaults to GoTab's)" style="width:280px" />
         <input id="importGotabLoc" placeholder="GoTab location UUID" style="width:280px" />
         <button onclick="importGotab()">Import from GoTab</button>
       </div>
@@ -169,11 +169,13 @@ async function importGotab(){
   const name=document.getElementById('importVendorName').value.trim();
   const gotabLocationId=document.getElementById('importGotabLoc').value.trim();
   const msgEl=document.getElementById('importMsg');
-  if(!name||!gotabLocationId){ msgEl.textContent='Enter a vendor name and a GoTab location UUID.'; return; }
+  if(!gotabLocationId){ msgEl.textContent='Enter a GoTab location UUID.'; return; }
   msgEl.textContent='Importing from GoTab…';
   try{
+    const body={gotabLocationId};
+    if(name) body.name=name;  // optional override; blank = use GoTab's name
     const r=await api('/halls/'+hallId+'/vendors/import-gotab',{method:'POST',
-      body:JSON.stringify({name,gotabLocationId})});
+      body:JSON.stringify(body)});
     let summary='Imported '+r.importedCount+' item'+(r.importedCount===1?'':'s')+' into \u201c'+r.vendorName+'\u201d.';
     if(r.needingPrepTime>0){
       summary+=' \u26a0 '+r.needingPrepTime+' item'+(r.needingPrepTime===1?'':'s')+
