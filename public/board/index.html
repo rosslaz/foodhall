@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Food Hall · Ready Board</title>
+<style>
+  :root { --bg:#0c0a08; --card:#181410; --line:#2e271e; --text:#f6efe2; --muted:#9a8d77;
+    --accent:#f0b429; --fire:#e8743b; --ready:#6fbf73; --font:ui-rounded,"Segoe UI",system-ui,sans-serif; }
+  * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--text); font-family:var(--font); }
+  header { padding:24px 32px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:baseline; }
+  header h1 { margin:0; font-size:30px; letter-spacing:-.5px; }
+  header .live { color:var(--accent); font-size:14px; text-transform:uppercase; letter-spacing:2px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:18px; padding:24px 32px; }
+  .group { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:20px; }
+  .group .code { font-size:22px; font-weight:800; letter-spacing:4px; color:var(--accent); }
+  .group .when { font-size:13px; color:var(--muted); margin-top:2px; }
+  .timer { font-size:52px; font-weight:800; margin:12px 0; }
+  .timer.ready { color:var(--ready); }
+  .tk { display:flex; justify-content:space-between; padding:7px 0; border-top:1px solid var(--line); font-size:15px; }
+  .badge { font-size:12px; padding:3px 10px; border-radius:999px; border:1px solid var(--line); color:var(--muted); }
+  .badge.fired { color:var(--fire); border-color:var(--fire); }
+  .badge.ready { color:var(--ready); border-color:var(--ready); }
+  .empty { color:var(--muted); padding:60px 32px; text-align:center; font-size:18px; }
+</style>
+</head>
+<body>
+<header><h1>Ready Board</h1><span class="live" id="live">● live</span></header>
+<div class="grid" id="grid"></div>
+<div class="empty hidden" id="empty">No active group orders right now.</div>
+<script>
+const API='/api';
+const groups=new Map();
+function money(c){return '$'+(c/100).toFixed(2);}
+
+async function loadActive(){
+  // Board reads the default hall, then fetches each active group it learns about
+  // via websocket. For MVP we poll the hall's active groups through a light call.
+  const hall=await fetch(API+'/halls/default').then(r=>r.json()).catch(()=>null);
+  if(!hall) return;
+  const res=await fetch(API+'/halls/'+hall.id+'/active-groups').then(r=>r.json()).catch(()=>({groups:[]}));
+  groups.clear();
+  for(const g of res.groups) groups.set(g.id,g);
+  render();
+}
+
+function render(){
+  const grid=document.getElementById('grid');
+  const list=[...groups.values()].filter(g=>['SCHEDULED','FIRED'].includes(g.status));
+  document.getElementById('empty').classList.toggle('hidden',list.length>0);
+  grid.innerHTML='';
+  for(const g of list){
+    const div=document.createElement('div'); div.className='group';
+    const target=g.targetReadyAt?new Date(g.targetReadyAt).getTime():0;
+    div.innerHTML=
+      '<div class="code">'+g.joinCode+'</div>'+
+      '<div class="when">'+g.members.length+' people · '+g.tickets.length+' kitchens</div>'+
+      '<div class="timer" data-target="'+target+'">--:--</div>'+
+      g.tickets.map(t=>'<div class="tk"><span>'+t.vendor.name+'</span><span class="badge '+
+        (t.status==='READY'?'ready':t.status==='FIRED'?'fired':'')+'">'+t.status.toLowerCase()+'</span></div>').join('');
+    grid.appendChild(div);
+  }
+}
+
+function tickTimers(){
+  document.querySelectorAll('.timer').forEach(el=>{
+    const target=+el.dataset.target; if(!target) return;
+    const left=Math.max(0,Math.round((target-Date.now())/1000));
+    if(left===0){el.textContent='READY';el.classList.add('ready');}
+    else{el.classList.remove('ready');
+      el.textContent=String(Math.floor(left/60)).padStart(2,'0')+':'+String(left%60).padStart(2,'0');}
+  });
+}
+
+function connectWS(){
+  const proto=location.protocol==='https:'?'wss':'ws';
+  const ws=new WebSocket(proto+'://'+location.host+'/api/ws');
+  ws.onmessage=()=>loadActive();
+  ws.onclose=()=>{document.getElementById('live').textContent='● reconnecting';setTimeout(connectWS,2000);};
+  ws.onopen=()=>document.getElementById('live').textContent='● live';
+}
+
+loadActive(); connectWS();
+setInterval(tickTimers,1000);
+setInterval(loadActive,15000);
+</script>
+</body>
+</html>

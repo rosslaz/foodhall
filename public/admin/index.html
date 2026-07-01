@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Food Hall · Admin</title>
+<style>
+  :root { --bg:#101418; --card:#192029; --line:#2a3440; --text:#eef3f8; --muted:#8da0b3;
+    --accent:#4f9cf0; --ok:#5fc27e; --danger:#e25c5c; --font:ui-sans-serif,"Segoe UI",system-ui,sans-serif; }
+  * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--text); font-family:var(--font); }
+  .wrap { max-width:960px; margin:0 auto; padding:24px; }
+  h1 { font-size:24px; margin:0 0 4px; } h2 { font-size:17px; color:var(--accent); margin:24px 0 10px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:14px; }
+  input,button,select { font:inherit; font-size:15px; }
+  input,select { padding:9px 11px; border-radius:8px; border:1px solid var(--line); background:#0e1217; color:var(--text); }
+  button { cursor:pointer; border:none; border-radius:8px; padding:9px 14px; background:var(--accent); color:#08111c; font-weight:600; }
+  button.ghost { background:transparent; border:1px solid var(--line); color:var(--text); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .muted { color:var(--muted); font-size:13px; }
+  table { width:100%; border-collapse:collapse; } td,th { text-align:left; padding:8px; border-bottom:1px solid var(--line); font-size:14px; }
+  .pill { font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); color:var(--muted); }
+  .hidden { display:none; }
+  label.f { display:block; font-size:13px; color:var(--muted); margin:8px 0 3px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Food Hall Admin</h1>
+  <p class="muted">Manage vendors, menus, and monitor live orders.</p>
+
+  <!-- LOGIN -->
+  <div id="login" class="card" style="max-width:380px">
+    <h2 style="margin-top:0">Sign in</h2>
+    <label class="f">Email</label><input id="email" style="width:100%" />
+    <label class="f">Password</label><input id="password" type="password" style="width:100%" />
+    <div class="row" style="margin-top:12px">
+      <button onclick="login()">Sign in</button>
+      <button class="ghost" onclick="bootstrap()">First-time setup</button>
+    </div>
+    <p class="muted" id="loginMsg"></p>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="dash" class="hidden">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <strong>Hall: <span id="hallName">—</span></strong>
+        <button class="ghost" onclick="logout()">Sign out</button>
+      </div>
+    </div>
+
+    <h2>Vendors &amp; menu</h2>
+    <div class="card">
+      <div class="row">
+        <input id="newVendorName" placeholder="New vendor name" />
+        <input id="newVendorGotab" placeholder="GoTab location id (optional)" />
+        <button onclick="addVendor()">Add vendor</button>
+      </div>
+    </div>
+    <div id="vendors"></div>
+
+    <h2>Live activity</h2>
+    <div class="card"><div id="activity" class="muted">Loading…</div></div>
+  </div>
+</div>
+
+<script>
+const API='/api';
+let token=localStorage.getItem('admin_token');
+let hallId=null;
+
+function authHeaders(){ return token?{'Authorization':'Bearer '+token}:{}; }
+async function api(path,opts={}){
+  // Header only when a body exists — Fastify rejects empty JSON bodies.
+  const headers={...(opts.body!==undefined?{'Content-Type':'application/json'}:{}),...authHeaders(),...(opts.headers||{})};
+  const res=await fetch(API+path,{...opts,headers});
+  if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.message||e.error||'Error'); }
+  return res.status===204?null:res.json();
+}
+
+async function bootstrap(){
+  const email=document.getElementById('email').value, password=document.getElementById('password').value;
+  try{ await api('/auth/bootstrap-admin',{method:'POST',body:JSON.stringify({email,password})});
+    msg('Admin created. Now sign in.'); }catch(e){ msg(e.message); }
+}
+async function login(){
+  const email=document.getElementById('email').value, password=document.getElementById('password').value;
+  try{ const r=await api('/auth/login',{method:'POST',body:JSON.stringify({email,password})});
+    token=r.token; localStorage.setItem('admin_token',token); enterDash(); }catch(e){ msg(e.message); }
+}
+function logout(){ token=null; localStorage.removeItem('admin_token'); location.reload(); }
+function msg(t){ document.getElementById('loginMsg').textContent=t; }
+
+async function enterDash(){
+  document.getElementById('login').classList.add('hidden');
+  document.getElementById('dash').classList.remove('hidden');
+  const hall=await api('/halls/default');
+  hallId=hall.id; document.getElementById('hallName').textContent=hall.name;
+  loadVendors(); loadActivity(); setInterval(loadActivity,10000);
+}
+
+async function loadVendors(){
+  const { vendors }=await api('/halls/'+hallId+'/menu');
+  const el=document.getElementById('vendors'); el.innerHTML='';
+  for(const v of vendors){
+    const card=document.createElement('div'); card.className='card';
+    let rows=v.menuItems.map(it=>
+      '<tr><td>'+it.name+'</td><td>$'+(it.priceCents/100).toFixed(2)+'</td><td>'+Math.round(it.prepSeconds/60)+
+      ' min</td><td><span class="pill">'+(it.available?'available':'hidden')+'</span></td></tr>').join('');
+    card.innerHTML='<div class="row" style="justify-content:space-between"><strong>'+v.name+'</strong>'+
+      '<span class="muted">'+(v.gotabLocationId?'GoTab: '+v.gotabLocationId:'no GoTab id')+'</span></div>'+
+      '<table style="margin-top:10px"><tr><th>Item</th><th>Price</th><th>Prep</th><th></th></tr>'+rows+'</table>'+
+      '<div class="row" style="margin-top:10px">'+
+        '<input placeholder="Item name" id="n_'+v.id+'" style="width:160px">'+
+        '<input placeholder="Price ($)" id="p_'+v.id+'" style="width:90px">'+
+        '<input placeholder="Prep (min)" id="t_'+v.id+'" style="width:90px">'+
+        '<button onclick="addItem(\''+v.id+'\')">Add item</button></div>';
+    el.appendChild(card);
+  }
+}
+
+async function addVendor(){
+  const name=document.getElementById('newVendorName').value.trim();
+  const gotabLocationId=document.getElementById('newVendorGotab').value.trim()||undefined;
+  if(!name) return;
+  try{ await api('/halls/'+hallId+'/vendors',{method:'POST',body:JSON.stringify({name,gotabLocationId})});
+    document.getElementById('newVendorName').value=''; document.getElementById('newVendorGotab').value=''; loadVendors(); }
+  catch(e){ alert(e.message); }
+}
+
+async function addItem(vendorId){
+  const name=document.getElementById('n_'+vendorId).value.trim();
+  const price=parseFloat(document.getElementById('p_'+vendorId).value);
+  const mins=parseFloat(document.getElementById('t_'+vendorId).value);
+  if(!name||isNaN(price)||isNaN(mins)) return alert('Fill name, price, prep');
+  try{ await api('/vendors/'+vendorId+'/items',{method:'POST',body:JSON.stringify({
+    name, priceCents:Math.round(price*100), prepSeconds:Math.round(mins*60)})}); loadVendors(); }
+  catch(e){ alert(e.message); }
+}
+
+async function loadActivity(){
+  const res=await fetch(API+'/halls/'+hallId+'/active-groups').then(r=>r.json()).catch(()=>({groups:[]}));
+  const el=document.getElementById('activity');
+  if(!res.groups.length){ el.textContent='No active groups.'; return; }
+  el.innerHTML='<table><tr><th>Code</th><th>Status</th><th>People</th><th>Kitchens</th><th>Ready at</th></tr>'+
+    res.groups.map(g=>'<tr><td>'+g.joinCode+'</td><td><span class="pill">'+g.status.toLowerCase()+'</span></td><td>'+
+    g.members.length+'</td><td>'+g.tickets.length+'</td><td>'+
+    (g.targetReadyAt?new Date(g.targetReadyAt).toLocaleTimeString():'—')+'</td></tr>').join('')+'</table>';
+}
+
+if(token) enterDash();
+</script>
+</body>
+</html>

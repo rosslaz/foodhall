@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Food Hall · Order</title>
+<style>
+  :root {
+    --bg: #14110e; --surface: #1f1b16; --surface2: #2a241d; --line: #3a3229;
+    --text: #f4ece0; --muted: #b3a691; --accent: #e8743b; --accent2: #f0b429;
+    --ok: #6fbf73; --danger: #e25c5c;
+    --font: ui-rounded, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font);
+    -webkit-font-smoothing: antialiased; }
+  .app { max-width: 480px; margin: 0 auto; min-height: 100vh; padding: 16px 16px 96px; }
+  h1 { font-size: 26px; letter-spacing: -.5px; margin: 8px 0 2px; }
+  h2 { font-size: 17px; margin: 20px 0 8px; color: var(--accent2); }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+    padding: 14px; margin-bottom: 12px; }
+  input, button { font-family: inherit; font-size: 16px; }
+  input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--surface2); color: var(--text); margin-bottom: 10px; }
+  button { cursor: pointer; border: none; border-radius: 10px; padding: 12px 16px;
+    background: var(--accent); color: #14110e; font-weight: 700; width: 100%; }
+  button.ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--line); font-weight: 600; }
+  button.sm { width: auto; padding: 7px 12px; font-size: 14px; border-radius: 8px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .between { justify-content: space-between; }
+  .pill { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--surface2);
+    color: var(--muted); border: 1px solid var(--line); }
+  .pill.ok { color: var(--ok); border-color: var(--ok); }
+  .pill.warn { color: var(--accent2); border-color: var(--accent2); }
+  .vendor { font-size: 13px; color: var(--accent); text-transform: uppercase; letter-spacing: .5px; }
+  .item { display: flex; justify-content: space-between; align-items: center; padding: 9px 0;
+    border-top: 1px solid var(--line); }
+  .item:first-child { border-top: none; }
+  .name { font-weight: 600; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--surface);
+    border-top: 1px solid var(--line); padding: 12px 16px; }
+  .bar .inner { max-width: 480px; margin: 0 auto; }
+  .code { font-size: 32px; letter-spacing: 6px; font-weight: 800; color: var(--accent2);
+    text-align: center; margin: 6px 0; }
+  .hidden { display: none; }
+  .toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+    background: var(--surface2); border: 1px solid var(--line); padding: 10px 16px;
+    border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .2s; z-index: 50; }
+  .toast.show { opacity: 1; }
+  .countdown { font-size: 40px; font-weight: 800; text-align: center; color: var(--accent2); }
+  small.hint { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Food Hall</h1>
+  <p class="sub">Order together. Eat together.</p>
+
+  <!-- LANDING -->
+  <div id="view-landing">
+    <div class="card">
+      <h2 style="margin-top:0">Start a group</h2>
+      <input id="hostName" placeholder="Your name" />
+      <button onclick="createGroup()">Create group</button>
+    </div>
+    <div class="card">
+      <h2 style="margin-top:0">Join a group</h2>
+      <input id="joinName" placeholder="Your name" />
+      <input id="joinCode" placeholder="6-letter code" maxlength="6" style="text-transform:uppercase" />
+      <button class="ghost" onclick="joinGroup()">Join</button>
+    </div>
+  </div>
+
+  <!-- GROUP -->
+  <div id="view-group" class="hidden">
+    <div class="card">
+      <div class="row between">
+        <div>
+          <small class="hint">Share this code</small>
+          <div class="code" id="groupCode">------</div>
+        </div>
+        <span class="pill" id="statusPill">open</span>
+      </div>
+    </div>
+
+    <div id="menuSection">
+      <h2>Menu</h2>
+      <div id="menu"></div>
+    </div>
+
+    <h2>Your order</h2>
+    <div class="card" id="myOrder"><span class="meta">Nothing yet.</span></div>
+
+    <div id="groupSummary"></div>
+
+    <!-- Payment -->
+    <div id="paySection" class="card hidden">
+      <div class="row between">
+        <strong>Your total</strong>
+        <strong id="myTotal">$0.00</strong>
+      </div>
+      <button id="payBtn" onclick="pay()" style="margin-top:10px">Pay my share</button>
+      <p class="meta" id="payHint" style="margin:8px 0 0"></p>
+    </div>
+
+    <!-- Ready tracking -->
+    <div id="readySection" class="card hidden">
+      <small class="hint">All food ready in</small>
+      <div class="countdown" id="countdown">--:--</div>
+      <div id="ticketList" style="margin-top:10px"></div>
+    </div>
+  </div>
+</div>
+
+<div class="bar hidden" id="actionBar"><div class="inner">
+  <button id="lockBtn" onclick="lock()">Lock order &amp; pay</button>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/api';
+const state = { groupId: null, memberId: null, token: null, isHost: false, hallId: null, group: null, ws: null };
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+function money(c) { return '$' + (c / 100).toFixed(2); }
+function show(id) { document.getElementById(id).classList.remove('hidden'); }
+function hide(id) { document.getElementById(id).classList.add('hidden'); }
+
+async function api(path, opts = {}) {
+  // Only claim a JSON body when one exists — Fastify (correctly) rejects
+  // Content-Type: application/json on body-less POSTs like /lock and /pay.
+  const headers = {
+    ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    ...(opts.headers || {}),
+  };
+  if (state.token) headers['X-Member-Token'] = state.token;
+  const res = await fetch(API + path, { ...opts, headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || err.error || 'Request failed');
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+// Pick the first food hall automatically (single-hall MVP).
+async function resolveHall() {
+  // The menu endpoint needs a hall id. We discover it lazily after group create
+  // (group already knows its hall). For landing-only we don't need it.
+}
+
+async function createGroup() {
+  const hostName = document.getElementById('hostName').value.trim();
+  if (!hostName) return toast('Enter your name');
+  const hall = await getDefaultHall();
+  if (!hall) return toast('No food hall configured');
+  const r = await api('/groups', { method: 'POST', body: JSON.stringify({ foodHallId: hall, hostName }) });
+  enterGroup(r, true);
+}
+
+async function joinGroup() {
+  const displayName = document.getElementById('joinName').value.trim();
+  const joinCode = document.getElementById('joinCode').value.trim().toUpperCase();
+  if (!displayName || joinCode.length !== 6) return toast('Name and 6-letter code required');
+  try {
+    const r = await api('/groups/join', { method: 'POST', body: JSON.stringify({ joinCode, displayName }) });
+    enterGroup(r, false);
+  } catch (e) { toast(e.message); }
+}
+
+// Discover a hall id by reading the seeded hall via a tiny convenience call.
+async function getDefaultHall() {
+  if (state.hallId) return state.hallId;
+  const r = await fetch(API + '/halls/default').then(x => x.ok ? x.json() : null).catch(() => null);
+  if (r && r.id) { state.hallId = r.id; return r.id; }
+  return null;
+}
+
+function enterGroup(r, isHost) {
+  state.groupId = r.groupId; state.memberId = r.memberId; state.token = r.memberToken; state.isHost = isHost;
+  document.getElementById('groupCode').textContent = r.joinCode;
+  hide('view-landing'); show('view-group');
+  if (isHost) show('actionBar');
+  loadMenu(); refresh(); connectWS();
+}
+
+async function loadMenu() {
+  const hall = state.group ? state.group.foodHallId : await getDefaultHall();
+  if (!hall) return;
+  const { vendors } = await api('/halls/' + hall + '/menu');
+  const el = document.getElementById('menu'); el.innerHTML = '';
+  for (const v of vendors) {
+    const card = document.createElement('div'); card.className = 'card';
+    card.innerHTML = '<div class="vendor">' + v.name + '</div>';
+    for (const it of v.menuItems) {
+      const row = document.createElement('div'); row.className = 'item';
+      row.innerHTML =
+        '<div><div class="name">' + it.name + '</div>' +
+        '<div class="meta">' + money(it.priceCents) + ' · ~' + Math.round(it.prepSeconds/60) + ' min</div></div>';
+      const btn = document.createElement('button'); btn.className = 'sm'; btn.textContent = 'Add';
+      btn.onclick = () => addItem(it.id);
+      row.appendChild(btn); card.appendChild(row);
+    }
+    el.appendChild(card);
+  }
+}
+
+async function addItem(menuItemId) {
+  try { await api('/groups/' + state.groupId + '/items', { method: 'POST', body: JSON.stringify({ menuItemId, qty: 1 }) });
+    toast('Added'); refresh(); } catch (e) { toast(e.message); }
+}
+async function removeItem(itemId) {
+  try { await api('/groups/' + state.groupId + '/items/' + itemId, { method: 'DELETE' }); refresh(); }
+  catch (e) { toast(e.message); }
+}
+
+async function refresh() {
+  const g = await api('/groups/' + state.groupId);
+  state.group = g;
+  renderStatus(g); renderMyOrder(g); renderSummary(g); renderPhase(g);
+}
+
+function renderStatus(g) {
+  const pill = document.getElementById('statusPill');
+  pill.textContent = g.status.toLowerCase();
+  pill.className = 'pill' + (g.status === 'OPEN' ? '' : g.status === 'SCHEDULED' || g.status === 'FIRED' ? ' ok' : ' warn');
+}
+
+function myMember(g) { return g.members.find(m => m.id === state.memberId); }
+
+function renderMyOrder(g) {
+  const me = myMember(g); const el = document.getElementById('myOrder');
+  if (!me || me.orderItems.length === 0) { el.innerHTML = '<span class="meta">Nothing yet.</span>'; return; }
+  el.innerHTML = '';
+  for (const oi of me.orderItems) {
+    const row = document.createElement('div'); row.className = 'item';
+    row.innerHTML = '<div><div class="name">' + oi.qty + '× ' + oi.menuItem.name + '</div>' +
+      '<div class="meta">' + oi.menuItem.vendor.name + ' · ' + money(oi.priceCentsSnapshot * oi.qty) + '</div></div>';
+    if (g.status === 'OPEN') {
+      const b = document.createElement('button'); b.className = 'sm ghost'; b.textContent = 'Remove';
+      b.onclick = () => removeItem(oi.id); row.appendChild(b);
+    }
+    el.appendChild(row);
+  }
+}
+
+function renderSummary(g) {
+  const el = document.getElementById('groupSummary');
+  const lines = g.members.map(m => {
+    const cnt = m.orderItems.reduce((s, i) => s + i.qty, 0);
+    const paid = m.payStatus === 'PAID' ? '<span class="pill ok">paid</span>' : '<span class="pill">unpaid</span>';
+    return '<div class="item"><div><span class="name">' + m.displayName + (m.isHost ? ' (host)' : '') +
+      '</span><div class="meta">' + cnt + ' item' + (cnt === 1 ? '' : 's') + '</div></div>' +
+      (g.status === 'OPEN' ? '' : paid) + '</div>';
+  }).join('');
+  el.innerHTML = '<h2>Group</h2><div class="card">' + lines + '</div>';
+}
+
+let countdownTimer = null;
+function renderPhase(g) {
+  // Lock button only for host while OPEN.
+  document.getElementById('actionBar').classList.toggle('hidden', !(state.isHost && g.status === 'OPEN'));
+  // Menu hidden once locked.
+  document.getElementById('menuSection').classList.toggle('hidden', g.status !== 'OPEN');
+
+  const me = myMember(g);
+  const payable = (g.status === 'LOCKED' || g.status === 'SCHEDULED') && me && me.payStatus !== 'PAID';
+  document.getElementById('paySection').classList.toggle('hidden', !payable);
+  if (payable) loadMyTotal();
+
+  const tracking = ['SCHEDULED', 'FIRED', 'COMPLETED'].includes(g.status);
+  document.getElementById('readySection').classList.toggle('hidden', !tracking);
+  if (tracking) startCountdown(g);
+}
+
+async function loadMyTotal() {
+  const t = await api('/payments/me');
+  document.getElementById('myTotal').textContent = money(t.totalCents);
+  document.getElementById('payHint').textContent = t.payStatus === 'PAID' ? 'Paid ✓' : 'Pay to confirm your part of the group order.';
+}
+
+async function pay() {
+  document.getElementById('payBtn').disabled = true;
+  try { await api('/payments/pay', { method: 'POST' }); toast('Paid'); refresh(); }
+  catch (e) { toast(e.message); document.getElementById('payBtn').disabled = false; }
+}
+
+function startCountdown(g) {
+  if (!g.targetReadyAt) return;
+  const target = new Date(g.targetReadyAt).getTime();
+  if (countdownTimer) clearInterval(countdownTimer);
+  const tick = () => {
+    const left = Math.max(0, Math.round((target - Date.now()) / 1000));
+    const m = String(Math.floor(left / 60)).padStart(2, '0');
+    const s = String(left % 60).padStart(2, '0');
+    document.getElementById('countdown').textContent = left === 0 ? 'Ready!' : m + ':' + s;
+  };
+  tick(); countdownTimer = setInterval(tick, 1000);
+  const tl = document.getElementById('ticketList');
+  tl.innerHTML = g.tickets.map(t =>
+    '<div class="item"><span class="name">' + t.vendor.name + '</span><span class="pill' +
+    (t.status === 'READY' ? ' ok' : t.status === 'FIRED' ? ' warn' : '') + '">' + t.status.toLowerCase() + '</span></div>'
+  ).join('');
+}
+
+async function lock() {
+  if (!confirm('Lock the order? No more items can be added.')) return;
+  try { await api('/groups/' + state.groupId + '/lock', { method: 'POST' }); toast('Locked — time to pay'); refresh(); }
+  catch (e) { toast(e.message); }
+}
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  state.ws = new WebSocket(proto + '://' + location.host + '/api/ws?groupId=' + state.groupId);
+  state.ws.onmessage = () => refresh();
+  state.ws.onclose = () => setTimeout(connectWS, 2000);
+}
+</script>
+</body>
+</html>

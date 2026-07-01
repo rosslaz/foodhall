@@ -1,0 +1,44 @@
+{
+  "name": "foodhall-orchestrator",
+  "version": "0.1.0",
+  "description": "Group ordering & cook-time synchronization for multi-vendor food halls",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "worker": "tsx --env-file=.env src/jobs/worker.ts",
+    "worker:prod": "node dist/jobs/worker.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "seed": "tsx prisma/seed.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:int": "vitest run --config vitest.int.config.ts",
+    "check": "npm run typecheck && npm run test && npm run test:int"
+  },
+  "dependencies": {
+    "@fastify/cors": "^9.0.1",
+    "@fastify/jwt": "^8.0.1",
+    "@fastify/rate-limit": "^9.1.0",
+    "@fastify/static": "^7.0.4",
+    "@fastify/websocket": "^10.0.1",
+    "@prisma/client": "^5.18.0",
+    "bullmq": "^5.12.0",
+    "fastify": "^4.28.1",
+    "ioredis": "^5.4.1",
+    "nanoid": "^5.0.7",
+    "pino": "^9.3.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.15",
+    "pino-pretty": "^11.2.2",
+    "prisma": "^5.18.0",
+    "tsx": "^4.17.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}

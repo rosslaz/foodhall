@@ -1,0 +1,214 @@
+// Food hall ordering platform — data model
+// Source of truth. All money in integer cents. All durations in seconds.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  VENDOR
+}
+
+enum GroupStatus {
+  OPEN        // members joining and adding items
+  LOCKED      // host locked; awaiting payment
+  SCHEDULED   // all paid; tickets scheduled
+  FIRED       // tickets sent to vendors
+  COMPLETED   // all tickets ready/picked up
+  CANCELLED
+}
+
+enum PayStatus {
+  UNPAID
+  PAID
+  REFUNDED
+}
+
+enum TicketStatus {
+  PENDING     // created, waiting for fire_at
+  FIRED       // sent to vendor (GoTab)
+  IN_PROGRESS // vendor cooking
+  READY       // vendor marked ready
+  CANCELLED
+}
+
+enum OrderItemStatus {
+  ACTIVE
+  DROPPED // removed by the payment timeout — kept for audit/analytics (S7)
+}
+
+// --- Staff accounts (admin + vendor logins) ---
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         UserRole
+  vendorId     String?  // set when role = VENDOR
+  vendor       Vendor?  @relation(fields: [vendorId], references: [id])
+  createdAt    DateTime @default(now())
+}
+
+model FoodHall {
+  id              String       @id @default(uuid())
+  name            String
+  // Target window (seconds) within which all items in a group should finish.
+  readyWindowS    Int          @default(120)
+  vendors         Vendor[]
+  groups          GroupOrder[]
+  createdAt       DateTime     @default(now())
+}
+
+model Vendor {
+  id              String     @id @default(uuid())
+  foodHallId      String
+  foodHall        FoodHall   @relation(fields: [foodHallId], references: [id])
+  name            String
+  description     String?
+  // Maps this vendor to its GoTab location/tab once integrated.
+  gotabLocationId String?
+  active          Boolean    @default(true)
+  menuItems       MenuItem[]
+  tickets         Ticket[]
+  users           User[]
+  createdAt       DateTime   @default(now())
+
+  @@index([foodHallId])
+}
+
+model MenuItem {
+  id          String      @id @default(uuid())
+  vendorId    String
+  vendor      Vendor      @relation(fields: [vendorId], references: [id])
+  name        String
+  description String?
+  priceCents  Int
+  // Static estimate now; replaced by live GoTab data later.
+  prepSeconds Int
+  available   Boolean     @default(true)
+  orderItems  OrderItem[]
+  createdAt   DateTime    @default(now())
+
+  @@index([vendorId])
+}
+
+model GroupOrder {
+  id             String      @id @default(uuid())
+  foodHallId     String
+  foodHall       FoodHall    @relation(fields: [foodHallId], references: [id])
+  joinCode       String      @unique
+  status         GroupStatus @default(OPEN)
+  lockedAt       DateTime?
+  targetReadyAt  DateTime?
+  members        Member[]
+  tickets        Ticket[]
+  outcome        ScheduleOutcome?
+  createdAt      DateTime    @default(now())
+
+  @@index([foodHallId])
+  @@index([status])
+}
+
+model Member {
+  id          String      @id @default(uuid())
+  groupId     String
+  group       GroupOrder  @relation(fields: [groupId], references: [id])
+  displayName String
+  isHost      Boolean     @default(false)
+  payStatus   PayStatus   @default(UNPAID)
+  // Opaque token the client uses to act as this member (no account needed).
+  sessionToken String     @unique
+  orderItems  OrderItem[]
+  createdAt   DateTime    @default(now())
+
+  @@index([groupId])
+}
+
+model OrderItem {
+  id                  String   @id @default(uuid())
+  memberId            String
+  member              Member   @relation(fields: [memberId], references: [id])
+  menuItemId          String
+  menuItem            MenuItem @relation(fields: [menuItemId], references: [id])
+  ticketId            String?
+  ticket              Ticket?  @relation(fields: [ticketId], references: [id])
+  qty                 Int      @default(1)
+  // ACTIVE items feed scheduling/kitchens/payments/views; DROPPED items are
+  // the audit trail of the payment timeout (never hard-deleted post-lock).
+  status              OrderItemStatus @default(ACTIVE)
+  droppedAt           DateTime?
+  // Frozen at lock time so later menu edits don't change historical orders.
+  // (Price is contractual — stays frozen. Prep is a prediction — scheduling
+  // re-reads the freshest estimate via the PrepEstimator seam, S8.)
+  prepSecondsSnapshot Int
+  priceCentsSnapshot  Int
+  notes               String?
+  createdAt           DateTime @default(now())
+
+  @@index([memberId])
+  @@index([ticketId])
+}
+
+model Ticket {
+  id           String       @id @default(uuid())
+  groupId      String
+  group        GroupOrder   @relation(fields: [groupId], references: [id])
+  vendorId     String
+  vendor       Vendor       @relation(fields: [vendorId], references: [id])
+  status       TicketStatus @default(PENDING)
+  // When the scheduler will fire this ticket to the vendor.
+  fireAt       DateTime
+  firedAt      DateTime?
+  readyAt      DateTime?
+  // Set after the vendor (GoTab) accepts the order. Unique (S9): one external
+  // order maps to exactly one ticket — also makes it a safe webhook lookup key.
+  gotabOrderId String?      @unique
+  orderItems   OrderItem[]
+  createdAt    DateTime     @default(now())
+
+  @@index([groupId])
+  @@index([vendorId])
+  // Composite serves the reconcile (status IN …) and sweep (status + fireAt
+  // cutoff) query shapes; leading column covers status-only filters (S9).
+  // NOTE: a partial unique index (groupId, vendorId) WHERE status <> 'CANCELLED'
+  // also exists — Prisma can't express it, so it lives in the migration SQL
+  // (see scripts/append-partial-index.ps1 and the project doc, S9).
+  @@index([status, fireAt])
+}
+
+// Append-only prediction-vs-actual record: one row per scheduled group.
+// Written with the prediction inside the scheduling transaction; finalized
+// with actuals when the group completes. This is the calibration + pitch
+// dataset: readySpreadMs (first dish to last dish) is the product KPI, and
+// targetErrorMs measures how honest the prediction was. Per-ticket detail
+// (fireAt vs firedAt vs readyAt) joins from Ticket by groupId.
+model ScheduleOutcome {
+  id            String     @id @default(uuid())
+  groupId       String     @unique
+  group         GroupOrder @relation(fields: [groupId], references: [id])
+  // Denormalized for per-hall analytics without a join.
+  foodHallId    String
+  // The anchor: the all-paid moment the real schedule was computed from.
+  scheduledAt   DateTime
+  // The prediction made at scheduledAt.
+  targetReadyAt DateTime
+  vendorCount   Int
+  itemCount     Int
+  // Actuals — null until the group completes (null = cancelled mid-flight,
+  // which is itself signal).
+  firstReadyAt  DateTime?
+  lastReadyAt   DateTime?
+  // KPI: lastReadyAt - firstReadyAt. How tight was the landing window?
+  readySpreadMs Int?
+  // Signed: lastReadyAt - targetReadyAt. Positive = food landed late.
+  targetErrorMs Int?
+  completedAt   DateTime?
+  createdAt     DateTime   @default(now())
+
+  @@index([foodHallId])
+}
