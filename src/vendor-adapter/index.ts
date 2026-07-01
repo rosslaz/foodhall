@@ -13,4 +13,24 @@ export function getVendorAdapter(): VendorAdapter {
   return instance;
 }
 
+let importInstance: VendorAdapter | null = null;
+
+// Returns an adapter for the GoTab menu-IMPORT path specifically. Import is a
+// pure catalog read (listProducts) and is UNBLOCKED even while the fire path is
+// blocked — so it always talks to REAL GoTab when credentials are present,
+// regardless of VENDOR_ADAPTER. This lets the app run the mock fire path (the
+// scheduled-order flow is still blocked on settlement) while still importing
+// real menus from the sandbox vendors.
+//
+// Falls back to the mock adapter ONLY when no GoTab credentials are configured,
+// so a dev with no .env secrets can still exercise the import UI end-to-end.
+export function getImportAdapter(): VendorAdapter {
+  if (importInstance) return importInstance;
+  const hasCreds =
+    (config.GOTAB_API_ACCESS_ID ?? config.GOTAB_API_KEY) &&
+    (config.GOTAB_API_ACCESS_SECRET ?? config.GOTAB_API_SECRET);
+  importInstance = hasCreds ? new GoTabAdapter() : new MockGoTabAdapter();
+  return importInstance;
+}
+
 export type { VendorAdapter } from './types.js';

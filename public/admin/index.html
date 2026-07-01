@@ -58,6 +58,17 @@
         <button onclick="addVendor()">Add vendor</button>
       </div>
     </div>
+
+    <div class="card">
+      <strong>Import a vendor menu from GoTab</strong>
+      <p class="muted" style="margin:4px 0 10px">Pulls the location's products (name, price, prep time) from GoTab and creates the vendor + menu here. Re-importing updates in place. Items GoTab has no prep time for are flagged — set a real prep time before they'll sync well.</p>
+      <div class="row">
+        <input id="importVendorName" placeholder="Vendor name (e.g. Konjo Me)" style="width:200px" />
+        <input id="importGotabLoc" placeholder="GoTab location UUID" style="width:280px" />
+        <button onclick="importGotab()">Import from GoTab</button>
+      </div>
+      <p class="muted" id="importMsg" style="margin-top:8px"></p>
+    </div>
     <div id="vendors"></div>
 
     <h2>Live activity</h2>
@@ -105,19 +116,44 @@ async function loadVendors(){
   const el=document.getElementById('vendors'); el.innerHTML='';
   for(const v of vendors){
     const card=document.createElement('div'); card.className='card';
-    let rows=v.menuItems.map(it=>
-      '<tr><td>'+it.name+'</td><td>$'+(it.priceCents/100).toFixed(2)+'</td><td>'+Math.round(it.prepSeconds/60)+
-      ' min</td><td><span class="pill">'+(it.available?'available':'hidden')+'</span></td></tr>').join('');
-    card.innerHTML='<div class="row" style="justify-content:space-between"><strong>'+v.name+'</strong>'+
-      '<span class="muted">'+(v.gotabLocationId?'GoTab: '+v.gotabLocationId:'no GoTab id')+'</span></div>'+
-      '<table style="margin-top:10px"><tr><th>Item</th><th>Price</th><th>Prep</th><th></th></tr>'+rows+'</table>'+
-      '<div class="row" style="margin-top:10px">'+
-        '<input placeholder="Item name" id="n_'+v.id+'" style="width:160px">'+
-        '<input placeholder="Price ($)" id="p_'+v.id+'" style="width:90px">'+
-        '<input placeholder="Prep (min)" id="t_'+v.id+'" style="width:90px">'+
-        '<button onclick="addItem(\''+v.id+'\')">Add item</button></div>';
+    const rows=v.menuItems.map(it=>{
+      const needsPrep=it.prepConfirmed===false;
+      const mins=Math.round(it.prepSeconds/60);
+      // Unconfirmed items store GoTab's real (usually 0) prep. Show the input
+      // empty with a prompt rather than a misleading "0" so the admin enters a
+      // real number; confirmed items show their actual minutes.
+      const prepVal=(needsPrep && it.prepSeconds===0) ? '' : String(mins);
+      const flag=needsPrep
+        ? '<span class="pill" style="border-color:var(--danger);color:var(--danger)">needs prep</span>'
+        : '<span class="pill">'+(it.available?'available':'hidden')+'</span>';
+      const rowStyle=needsPrep?' style="background:rgba(226,92,92,0.06)"':'';
+      const priceStr='$'+(it.priceCents/100).toFixed(2);
+      return '<tr'+rowStyle+'>'
+        +'<td>'+it.name+'</td>'
+        +'<td>'+priceStr+'</td>'
+        +'<td><input value="'+prepVal+'" placeholder="—" id="prep_'+it.id+'" style="width:56px"> min '
+          +'<button class="ghost" style="padding:4px 8px" onclick="savePrep(\''+it.id+'\')">save</button></td>'
+        +'<td>'+flag+'</td></tr>';
+    }).join('');
+    const gotabLabel=v.gotabLocationId ? ('GoTab: '+v.gotabLocationId) : 'no GoTab id';
+    card.innerHTML='<div class="row" style="justify-content:space-between"><strong>'+v.name+'</strong>'
+      +'<span class="muted">'+gotabLabel+'</span></div>'
+      +'<table style="margin-top:10px"><tr><th>Item</th><th>Price</th><th>Prep</th><th></th></tr>'+rows+'</table>'
+      +'<div class="row" style="margin-top:10px">'
+        +'<input placeholder="Item name" id="n_'+v.id+'" style="width:160px">'
+        +'<input placeholder="Price ($)" id="p_'+v.id+'" style="width:90px">'
+        +'<input placeholder="Prep (min)" id="t_'+v.id+'" style="width:90px">'
+        +'<button onclick="addItem(\''+v.id+'\')">Add item</button></div>';
     el.appendChild(card);
   }
+}
+
+async function savePrep(itemId){
+  const mins=parseFloat(document.getElementById('prep_'+itemId).value);
+  if(isNaN(mins)||mins<=0) return alert('Enter a prep time in minutes (greater than 0).');
+  try{ await api('/items/'+itemId,{method:'PATCH',body:JSON.stringify({prepSeconds:Math.round(mins*60)})});
+    loadVendors(); }
+  catch(e){ alert(e.message); }
 }
 
 async function addVendor(){
@@ -127,6 +163,27 @@ async function addVendor(){
   try{ await api('/halls/'+hallId+'/vendors',{method:'POST',body:JSON.stringify({name,gotabLocationId})});
     document.getElementById('newVendorName').value=''; document.getElementById('newVendorGotab').value=''; loadVendors(); }
   catch(e){ alert(e.message); }
+}
+
+async function importGotab(){
+  const name=document.getElementById('importVendorName').value.trim();
+  const gotabLocationId=document.getElementById('importGotabLoc').value.trim();
+  const msgEl=document.getElementById('importMsg');
+  if(!name||!gotabLocationId){ msgEl.textContent='Enter a vendor name and a GoTab location UUID.'; return; }
+  msgEl.textContent='Importing from GoTab…';
+  try{
+    const r=await api('/halls/'+hallId+'/vendors/import-gotab',{method:'POST',
+      body:JSON.stringify({name,gotabLocationId})});
+    let summary='Imported '+r.importedCount+' item'+(r.importedCount===1?'':'s')+' into \u201c'+r.vendorName+'\u201d.';
+    if(r.needingPrepTime>0){
+      summary+=' \u26a0 '+r.needingPrepTime+' item'+(r.needingPrepTime===1?'':'s')+
+        ' had no prep time in GoTab — set a real prep time below before they\u2019ll sync.';
+    }
+    msgEl.textContent=summary;
+    document.getElementById('importVendorName').value='';
+    document.getElementById('importGotabLoc').value='';
+    loadVendors();
+  }catch(e){ msgEl.textContent='Import failed: '+e.message; }
 }
 
 async function addItem(vendorId){

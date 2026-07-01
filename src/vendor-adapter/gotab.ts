@@ -8,6 +8,7 @@ import type {
   SubmitTicketRequest,
   SubmitTicketResult,
   VendorAdapter,
+  VendorProduct,
   VendorTicketStatus,
 } from './types.js';
 
@@ -117,5 +118,67 @@ export class GoTabAdapter implements VendorAdapter {
       'NOT_IMPLEMENTED',
       'GoTab cancelTicket not yet implemented (cancellability rules unverified)',
     );
+  }
+
+  // List a location's orderable products, for menu import/onboarding.
+  //
+  // UNBLOCKED: this is a pure catalog READ via GraphQL productsList — verified
+  // working in the sandbox (project doc "Products"), independent of the
+  // submit/settlement blocker. Mapping rules (all confirmed against Konjo):
+  //   - price: basePrice/displayPrice are in CENTS already. Use basePrice.
+  //   - productType CUSTOM = back-office payment instruments (Cash Payment,
+  //     Write-Off, etc.), NOT menu items — filter them out. Keep DEFAULT.
+  //   - prepTime is in MINUTES; ×60 to seconds. Treat both null AND 0 as
+  //     "unset" -> null (own prep table is the source of truth; admin fills in).
+  //   - orderEnabled/available: skip items not orderable.
+  async listProducts(locationUuid: string): Promise<VendorProduct[]> {
+    const query = `query ($loc: String!) {
+      location(locationUuid: $loc) {
+        productsList {
+          name
+          productUuid
+          productType
+          basePrice
+          prepTime
+          orderEnabled
+          available
+        }
+      }
+    }`;
+    const data = await this.client.graph<{
+      location: {
+        productsList: Array<{
+          name: string;
+          productUuid: string;
+          productType: string | null;
+          basePrice: number | null;
+          prepTime: number | null;
+          orderEnabled: boolean | null;
+          available: boolean | null;
+        }> | null;
+      } | null;
+    }>(query, { loc: locationUuid });
+
+    const list = data.location?.productsList ?? [];
+    const products: VendorProduct[] = [];
+    for (const p of list) {
+      // Skip back-office payment instruments and anything not orderable.
+      if ((p.productType ?? '').toUpperCase() === 'CUSTOM') continue;
+      if (p.orderEnabled === false) continue;
+      // prepTime: minutes -> seconds; null or 0 -> unset (null).
+      const prepSeconds =
+        p.prepTime && p.prepTime > 0 ? Math.round(p.prepTime * 60) : null;
+      products.push({
+        gotabProductUuid: p.productUuid,
+        name: p.name,
+        priceCents: p.basePrice ?? 0,
+        prepSeconds,
+      });
+    }
+    logger.info(
+      { locationUuid, total: list.length, imported: products.length },
+      'listed GoTab products for import',
+    );
+    return products;
   }
 }

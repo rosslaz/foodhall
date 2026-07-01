@@ -38,6 +38,16 @@ export interface SubmitTicketResult {
 // SCHEDULED = accepted by the platform but not yet released to the kitchen.
 export type VendorTicketStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'READY' | 'CANCELLED';
 
+// A product read from the vendor's catalog, normalized to our units/shape.
+// prepSeconds is null when the platform has no usable prep time (GoTab returns
+// null OR 0 for "unset" — both map to null here; the admin fills it in).
+export interface VendorProduct {
+  gotabProductUuid: string;
+  name: string;
+  priceCents: number;
+  prepSeconds: number | null;
+}
+
 export interface VendorAdapter {
   readonly name: string;
   // True: the platform holds scheduled orders and fires them itself; we submit
@@ -50,4 +60,7 @@ export interface VendorAdapter {
   getTicketStatus(externalOrderId: string): Promise<VendorTicketStatus>;
   // Cancel a ticket if still cancellable.
   cancelTicket(externalOrderId: string): Promise<void>;
+  // List the orderable products for a location, for menu onboarding/import.
+  // This is a READ — unblocked even while submitTicket is not (see gotab.ts).
+  listProducts(locationUuid: string): Promise<VendorProduct[]>;
 }

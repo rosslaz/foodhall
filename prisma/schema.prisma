@@ -90,10 +90,23 @@ model MenuItem {
   priceCents  Int
   // Static estimate now; replaced by live GoTab data later.
   prepSeconds Int
+  // Whether prepSeconds is a REAL value (admin-entered, or supplied by GoTab)
+  // vs a placeholder written at import time because no prep was available.
+  // false = the number is a guess and the item needs an admin to set a real
+  // prep time before it will synchronize accurately. Manually-added items are
+  // always true (the admin typed the number). Consumed by the admin UI today;
+  // a future scheduler/estimator pass can treat unconfirmed prep as
+  // low-confidence (see PrepEstimator, S8).
+  prepConfirmed Boolean   @default(true)
   available   Boolean     @default(true)
+  // Set when this item was imported from (or matched to) a GoTab product, so a
+  // re-import updates in place instead of creating duplicates. Unique per
+  // vendor (a GoTab product maps to at most one menu item within a vendor).
+  gotabProductUuid String?
   orderItems  OrderItem[]
   createdAt   DateTime    @default(now())
 
+  @@unique([vendorId, gotabProductUuid])
   @@index([vendorId])
 }
 

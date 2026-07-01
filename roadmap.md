@@ -124,8 +124,8 @@ Still to build (BLOCKED on the make-or-break test / holdsSchedule fork):
 - `getTicketStatus`: verify the real query field name + `ordersList` timestamp
   fields against the live schema once an order exists to read.
 - `cancelTicket`: stubbed; document what's cancellable after `scheduled` is set.
-- Map menu items: our catalog ↔ GoTab product ids (likely a new
-  `gotabProductId` on MenuItem — small migration).
+- Map menu items: our catalog ↔ GoTab product ids (**DONE for the import
+  direction** — see 2.4a below; a `gotabProductUuid` now exists on MenuItem).
 - **GoTab `prepTime` is seed-only, never a runtime dependency** (confirmed by
   Zach 2026-06-26: optional/nullable, `0`→`null`, operators usually leave it
   blank; unit is MINUTES so ×60 to the scheduler's seconds). During location
@@ -133,6 +133,46 @@ Still to build (BLOCKED on the make-or-break test / holdsSchedule fork):
   (null/0 → no seed); the scheduler reads prep time ONLY from the `PrepEstimator`
   (S8). Do not wire fire-timing to GoTab's field even though Zach suggested making
   it an onboarding requirement — keep the correctness boundary inside our system.
+
+### 2.4a Menu import from GoTab — SHIPPED (2026-07-01)
+
+Admin can onboard a vendor by pulling its live catalog from GoTab, instead of
+hand-typing the menu. This is a pure catalog READ, so it is UNBLOCKED by the
+submit/settlement fork — and it's the first time the *app itself* (not curl in
+PowerShell) calls GoTab. Verified end-to-end against the real Konjo sandbox
+(4 items pulled, priced, flagged), not just the mock.
+
+- **Adapter:** `listProducts(locationUuid)` added to the `VendorAdapter`
+  interface + mock + real `gotab.ts`. Real impl runs the confirmed GraphQL
+  `productsList` query, filters `productType == CUSTOM` (back-office payment
+  instruments) and non-orderable items, maps `basePrice`→cents and
+  `prepTime` (minutes) → seconds.
+- **Import always talks to REAL GoTab even in mock fire-mode.** New
+  `getImportAdapter()` factory returns the real adapter whenever GoTab creds
+  exist, regardless of `VENDOR_ADAPTER` — because importing (read) is unblocked
+  while firing (write) is not. Falls back to mock only when no creds are set.
+- **Route:** `POST /api/halls/:hallId/vendors/import-gotab` (ADMIN). Upserts the
+  vendor by (hall, gotabLocationId) and its items in one transaction. Idempotent:
+  re-import matches existing items by `gotabProductUuid` (new `MenuItem` field,
+  `@@unique([vendorId, gotabProductUuid])` — NULLs distinct so hand-added items
+  coexist) and updates in place instead of duplicating. Never clobbers an
+  admin-corrected prep on re-import.
+- **Prep-time HONESTY (this is the important design call):** items GoTab has no
+  prep for are stored with their ACTUAL value (0), NOT a fabricated placeholder,
+  and marked `prepConfirmed = false` (new `MenuItem` boolean, default true so
+  manual + pre-existing items are confirmed). An invented number that looks real
+  is worse than an honest zero. The admin UI flags unconfirmed items (red "needs
+  prep", blank prep input) and lets the admin set a real prep inline
+  (`PATCH /items/:id` sets `prepConfirmed = true`). Full loop verified: import →
+  flagged → corrected → confirmed.
+- **DEFERRED (option 1 follow-up, NOT built):** enforcement. An unconfirmed item
+  is still technically orderable — the scheduler will use its 0 prep and
+  mis-stagger if ordered before an admin fixes it. Making `prepConfirmed = false`
+  items non-orderable (likely `prepSeconds Int?` + a menu/scheduler guard) is the
+  correct end state but touches the tested scheduler, so it was deliberately not
+  rushed. `prepConfirmed` is the breadcrumb for adding it.
+- **Migrations:** `gotab_product_uuid`, `menu_item_prep_confirmed` (both additive).
+- Unit tests still 12/12; typecheck clean.
 
 ### 2.5 Build: recovery sweep for failed platform submissions
 

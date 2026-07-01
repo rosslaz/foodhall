@@ -4,6 +4,7 @@ import type {
   SubmitTicketRequest,
   SubmitTicketResult,
   VendorAdapter,
+  VendorProduct,
   VendorTicketStatus,
 } from './types.js';
 
@@ -98,5 +99,19 @@ export class MockGoTabAdapter implements VendorAdapter {
   async cancelTicket(externalOrderId: string): Promise<void> {
     const order = this.byExternal.get(externalOrderId);
     if (order) order.cancelled = true;
+  }
+
+  // Returns a small fake catalog so the GoTab menu-import flow can be exercised
+  // in mock mode. One item deliberately has null prepSeconds to demo the
+  // "needs a prep time" path the real sandbox produces (GoTab prepTime is
+  // usually blank). The locationUuid is echoed into the product ids so repeated
+  // imports of the same mock location are idempotent (stable uuids).
+  async listProducts(locationUuid: string): Promise<VendorProduct[]> {
+    const tag = locationUuid.slice(0, 6);
+    return [
+      { gotabProductUuid: `mockprd_${tag}_burger`, name: 'Smash Burger', priceCents: 1200, prepSeconds: 480 },
+      { gotabProductUuid: `mockprd_${tag}_fries`, name: 'Fries', priceCents: 500, prepSeconds: 240 },
+      { gotabProductUuid: `mockprd_${tag}_shake`, name: 'Milkshake', priceCents: 700, prepSeconds: null },
+    ];
   }
 }
