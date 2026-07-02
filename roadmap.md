@@ -204,13 +204,24 @@ resubmit. This becomes the regression net for every future GoTab change.
 
 ### 2.8 Estimator groundwork
 
-Sandbox has no real kitchen load, so `queue_adjustment` can't be calibrated
-here — but wire the live `PrepEstimator` implementation (rolling
-`prepared − sent` per vendor, SENT-count padding) behind a flag so DSC data
-flows into it from day one of the POC. The static estimator remains the
-default until real data justifies the switch. Our own per-item table is the
-source of truth for prep time at schedule time — GoTab's `prepTime` is, at
-most, an onboarding seed (see 2.4), confirmed empty-in-practice by GoTab.
+**Full design now exists: `prep-estimation-design.md` (2026-07-02) — it
+supersedes the sketch that used to live here.** Core: decompose estimates into
+per-item cook time (robust stats + shrinkage to admin priors) + live vendor
+queue wait (SENT depth ÷ recent bump rate — a CURRENT signal, which is the
+structural fix for the doc's lagging-indicator caveat), with a time-of-day
+table as fallback, hard clamps, and a `PREP_ESTIMATOR=static|live` flag. Plugs
+into the S8 seam by folding vendor wait into item estimates — scheduler and
+seam signature untouched. Location-wide GoTab `ordersList` ingestion (walk-up
+orders too, not just ours) is the data multiplier. **Prerequisite: the
+finding-#7 enforcement** (unconfirmed items must not be orderable).
+
+Sandbox has no real kitchen load, so nothing can be calibrated here — wire the
+live estimator in SHADOW mode (logs would-have-been predictions into
+`ScheduleOutcome` alongside static's) so DSC data flows from day one of the
+POC. The static estimator remains the default until shadow data justifies the
+switch. Our own per-item table is the source of truth for prep time at
+schedule time — GoTab's `prepTime` is, at most, an onboarding seed (see 2.4),
+confirmed empty-in-practice by GoTab.
 
 ### Phase 2 exit criteria
 
@@ -355,11 +366,15 @@ Suggested thresholds — finalize with Jon in 3.7:
 
 Weekly: review `prepared − sent` per vendor vs configured prep times; correct
 estimates in the admin UI (takes effect immediately via the S8 estimator).
-Once 2–3 weeks of data exist, enable the live estimator (2.8) and compare its
-prediction error against the static one using `targetErrorMs` — switch only if
-it measurably wins. Watch the documented load-model caveat: predictions run
-optimistic during rushes; if peak-hour `targetErrorMs` skews late, add the
-SENT-count padding before blaming prep times.
+The live estimator (design: `prep-estimation-design.md`) runs in shadow from
+day one; after 2–3 weeks compare its `targetErrorMs` distribution against the
+static estimator's via `ScheduleOutcome.shadowTargetReadyAt` — flip
+`PREP_ESTIMATOR=live` only if it measurably wins, and flip back instantly if
+production behavior degrades. Watch the documented load-model caveat: if
+peak-hour `targetErrorMs` still skews late under the live estimator, that's
+the trigger for its v2 refinement (forecasting queue growth during the
+ticket's own wait — see the design doc's out-of-scope notes), not for blaming
+prep times.
 
 ### 4.4 Cadence and go/no-go
 

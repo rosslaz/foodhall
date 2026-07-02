@@ -774,6 +774,45 @@ written. Findings below, worst first.
 #3 as a roadmap-3.2 line (done); #4–#6 recorded known-issues; #7 folded into
 the existing enforcement follow-up with raised priority.
 
+---
+
+## Dynamic prep-time estimation — DESIGNED (2026-07-02), not built
+
+Full design in **`prep-estimation-design.md`**. This is the system that
+answers both flavors of prep-time uncertainty — unknown (blank/wrong values)
+and non-stationary (rush-hour drift) — and it is the direct answer to this
+doc's load-modeling caveat. The one-paragraph version:
+
+Decompose every estimate into **per-item cook time** (p50 of uncontended
+observations, Bayesian-shrunk toward the admin value, per-vendor calibration
+multiplier as the thin-sample fallback) plus **live vendor queue wait**
+(current SENT depth ÷ recent bump rate — Little's law on a live signal, which
+is the structural fix for "rolling averages run optimistic exactly during
+rushes"), with a learned time-of-day table as fallback and hard clamps
+(0.5×–3× admin prior) everywhere. Plugs into the S8 seam by folding vendor
+wait into each of that vendor's item estimates (scheduler takes max per
+vendor, so +W on every item = ticket prep + W) — **scheduler, seam signature,
+and all existing tests untouched.** Observations come from our own tickets
+AND location-wide GoTab `ordersList` (walk-up orders at the same kitchens —
+the data multiplier; a read, unblocked by the settlement fork, but needs live
+schema verification + orders existing). Rollout is shadow-mode: static keeps
+driving scheduling while live logs would-have-been predictions into
+`ScheduleOutcome`; the flag flips only when live measurably wins on
+`targetErrorMs` (roadmap 4.3).
+
+Key decisions recorded in the design doc: mid-flight rescheduling of
+already-scheduled fire times is explicitly OUT of scope (GoTab cancellation
+semantics unverified; oscillating re-shuffles worse than residual error —
+"real-time" means fresh estimates AT the all-paid re-anchor, which is why S8
+exists); no ML, no new infra — EWMAs, medians, one division, inside the
+monolith + worker. **Prerequisite before building any of it: the finding-#7
+enforcement** (unconfirmed items must become non-orderable — an honest
+estimator can't sit on top of dishonest zeros). Build split: pipeline pieces
+(schema, capture, estimator behind flag, shadow logging, mock jitter mode)
+are unblocked now; the GoTab poller and all calibration are POC-gated — the
+machine can be built any time, but it cannot learn anything true until real
+kitchens feed it.
+
 
 
 
