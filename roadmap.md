@@ -177,6 +177,22 @@ PowerShell) calls GoTab. Verified end-to-end against the real Konjo sandbox
   items non-orderable (likely `prepSeconds Int?` + a menu/scheduler guard) is the
   correct end state but touches the tested scheduler, so it was deliberately not
   rushed. `prepConfirmed` is the breadcrumb for adding it.
+- **Availability handling (added 2026-07-02, after empirically verifying the
+  dashboard tri-state — mapping table + probe script recorded in the project
+  doc):** `listProducts` classifies each product AVAILABLE / UNAVAILABLE
+  (86'd: disabled + `enableTimestamp` set, auto-expiring) / HIDDEN (disabled +
+  null timestamp) / CUSTOM. HIDDEN + CUSTOM are never returned. UNAVAILABLE
+  items ARE imported, as local `available:false` (runtime 86 state belongs in
+  the catalog, not skipped — GoTab auto-restores them). Re-import syncs
+  `available` BOTH directions on matched items and deactivates GoTab-linked
+  local items missing from the fetched list (fixes the confirmed re-import
+  divergence bug). The import response NAMES everything unavailable or
+  deactivated — required because `available:false` items are invisible in the
+  admin UI until the finding-#5 unfiltered view exists. GoTab is the
+  availability source of truth ONLY for GoTab-linked items; hand-added items
+  (null `gotabProductUuid`) are never touched by sync. `hideItemsMissingPrep`
+  applies at creation only. Classification is a pure module
+  (`gotab-availability.ts`, unit-tested) per the no-config-imports rule.
 - **Migrations:** `gotab_product_uuid`, `menu_item_prep_confirmed` (both additive).
 - Unit tests still 12/12; typecheck clean.
 

@@ -171,6 +171,18 @@ export async function vendorRoutes(app: FastifyInstance) {
   // technically orderable — the scheduler will use their 0 prep and mis-stagger
   // if ordered before an admin fixes them. prepConfirmed is the breadcrumb for
   // adding "not orderable until confirmed" enforcement later.
+  //
+  // AVAILABILITY (verified mapping, project doc 2026-07-02): listProducts
+  // returns AVAILABLE and UNAVAILABLE (86'd, auto-expiring) products; HIDDEN
+  // and CUSTOM never reach us. UNAVAILABLE imports as local available:false —
+  // runtime 86 state belongs in the catalog, not skipped, because GoTab
+  // restores it on its own. For GoTab-linked items, GoTab is the availability
+  // SOURCE OF TRUTH: re-import syncs `available` both directions on matched
+  // items and deactivates local GoTab-linked items missing from the fetched
+  // list (hidden/archived/deleted upstream). Hand-added items (null
+  // gotabProductUuid) are never touched. The response NAMES everything
+  // unavailable or deactivated — required while finding #5 stands (an
+  // available:false item is invisible in the admin UI, so silence = confusion).
   app.post(
     '/halls/:hallId/vendors/import-gotab',
     { preHandler: requireAuth('ADMIN') },
@@ -199,8 +211,8 @@ export async function vendorRoutes(app: FastifyInstance) {
       const products = catalog.products;
       if (products.length === 0) {
         throw badRequest(
-          `GoTab returned no orderable products for location ${gotabLocationId}. ` +
-            'Check the location id and that it has orderable (non-CUSTOM) products.',
+          `GoTab returned no importable products for location ${gotabLocationId}. ` +
+            'Check the location id and that it has customer-facing (non-hidden, non-CUSTOM) products.',
         );
       }
       // Vendor name: admin's override if given, else GoTab's location name, else
@@ -224,7 +236,11 @@ export async function vendorRoutes(app: FastifyInstance) {
           // Store GoTab's actual value. Missing prep -> 0 (honest "unset"),
           // NOT a fabricated placeholder. prepConfirmed carries the real signal.
           const prepSeconds = p.prepSeconds ?? 0;
-          const available = missingPrep && hideItemsMissingPrep ? false : true;
+          const gotabSaysAvailable = p.availability === 'AVAILABLE';
+          // hideItemsMissingPrep applies at CREATION only; on update, GoTab's
+          // availability is authoritative for GoTab-linked items.
+          const availableAtCreate =
+            gotabSaysAvailable && !(missingPrep && hideItemsMissingPrep);
           // Match an existing item by (vendor, gotabProductUuid) for idempotency.
           const existing = await tx.menuItem.findFirst({
             where: { vendorId: vendor.id, gotabProductUuid: p.gotabProductUuid },
@@ -233,12 +249,14 @@ export async function vendorRoutes(app: FastifyInstance) {
             ? await tx.menuItem.update({
                 where: { id: existing.id },
                 // Do NOT overwrite an admin-corrected prep time on re-import:
-                // only refresh name/price, and only fill prep if GoTab now has a
-                // real value AND the item is still unconfirmed (never clobber a
-                // human-set prep). Setting a real prep also confirms it.
+                // only refresh name/price/availability, and only fill prep if
+                // GoTab now has a real value AND the item is still unconfirmed
+                // (never clobber a human-set prep). Setting a real prep also
+                // confirms it. `available` syncs BOTH directions from GoTab.
                 data: {
                   name: p.name,
                   priceCents: p.priceCents,
+                  available: gotabSaysAvailable,
                   ...(p.prepSeconds !== null && !existing.prepConfirmed
                     ? { prepSeconds: p.prepSeconds, prepConfirmed: true }
                     : {}),
@@ -254,7 +272,7 @@ export async function vendorRoutes(app: FastifyInstance) {
                   // Items with no GoTab prep stay unconfirmed (prep = 0) until
                   // an admin sets a real one.
                   prepConfirmed: !missingPrep,
-                  available,
+                  available: availableAtCreate,
                   gotabProductUuid: p.gotabProductUuid,
                 },
               });
@@ -265,17 +283,46 @@ export async function vendorRoutes(app: FastifyInstance) {
             prepSeconds: saved.prepSeconds,
             prepConfirmed: saved.prepConfirmed,
             needsPrepTime: !saved.prepConfirmed,
+            available: saved.available,
+            gotabUnavailable: !gotabSaysAvailable,
           });
         }
-        return { vendor, items };
+
+        // Deactivation sweep: local GoTab-linked items for this vendor that are
+        // NOT in the fetched list have gone hidden/archived/deleted upstream —
+        // deactivate them so our menu can't sell what GoTab no longer offers.
+        // (Fixes the recorded re-import divergence bug.) Hand-added items
+        // (gotabProductUuid null) are untouched by design.
+        const fetchedUuids = products.map((p) => p.gotabProductUuid);
+        const stale = await tx.menuItem.findMany({
+          where: {
+            vendorId: vendor.id,
+            gotabProductUuid: { not: null, notIn: fetchedUuids },
+            available: true,
+          },
+          select: { id: true, name: true },
+        });
+        if (stale.length > 0) {
+          await tx.menuItem.updateMany({
+            where: { id: { in: stale.map((s) => s.id) } },
+            data: { available: false },
+          });
+        }
+
+        return { vendor, items, deactivated: stale.map((s) => s.name) };
       });
 
       const needingPrep = created.items.filter((i) => i.needsPrepTime).length;
+      const unavailableItems = created.items
+        .filter((i) => i.gotabUnavailable)
+        .map((i) => i.name);
       return reply.status(201).send({
         vendorId: created.vendor.id,
         vendorName: created.vendor.name,
         importedCount: created.items.length,
         needingPrepTime: needingPrep,
+        unavailableItems,
+        deactivatedItems: created.deactivated,
         items: created.items,
       });
     },

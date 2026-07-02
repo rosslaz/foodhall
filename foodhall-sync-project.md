@@ -778,10 +778,20 @@ the existing enforcement follow-up with raised priority.
 
 ## Dynamic prep-time estimation — DESIGNED (2026-07-02), not built
 
-Full design in **`prep-estimation-design.md`**. This is the system that
-answers both flavors of prep-time uncertainty — unknown (blank/wrong values)
-and non-stationary (rush-hour drift) — and it is the direct answer to this
-doc's load-modeling caveat. The one-paragraph version:
+Full design in **`prep-estimation-design.md`** — expanded same day into a
+two-part document: Part I design rationale, **Part II a full implementation
+specification written for a lesser-model implementer** (exact schema blocks,
+function signatures with worked numeric examples as required unit tests,
+per-phase file lists and acceptance gates, and the codebase's recorded
+landmines: `.js` ESM suffixes, pure-modules-don't-import-config, BullMQ
+job-id colons, Windows EPERM migrate dance, int-test truncation list,
+full-file-rewrite-only for frontends). One v1 simplification made during the
+spec pass: observation data SUGGESTS prep values but only `prepConfirmed`
+gates orderability — no auto-enabling items from data.
+
+The system answers both flavors of prep-time uncertainty — unknown
+(blank/wrong values) and non-stationary (rush-hour drift) — and is the direct
+answer to this doc's load-modeling caveat. The one-paragraph version:
 
 Decompose every estimate into **per-item cook time** (p50 of uncontended
 observations, Bayesian-shrunk toward the admin value, per-vendor calibration
@@ -812,6 +822,73 @@ estimator can't sit on top of dishonest zeros). Build split: pipeline pieces
 are unblocked now; the GoTab poller and all calibration are POC-gated — the
 machine can be built any time, but it cannot learn anything true until real
 kitchens feed it.
+
+---
+
+## GoTab product availability mapping — VERIFIED empirically (2026-07-02)
+
+Probed live (`scripts/probe-gotab-availability.ts`, kept for reuse) by
+toggling a Konjo item through the dashboard's three states and diffing
+`productsList`. The dashboard tri-state maps to:
+
+| Dashboard | `orderEnabled` | `available` | `enableTimestamp` |
+| --- | --- | --- | --- |
+| Available | true | true | null |
+| Unavailable | false | false | **set** (auto re-enable time) |
+| Hidden | false | false | null |
+
+Key facts:
+
+- **`orderEnabled` and `available` move in LOCKSTEP** under the dashboard
+  toggle; neither alone distinguishes Unavailable from Hidden. The
+  differentiator is `enableTimestamp`.
+- **"Unavailable" is an auto-expiring 86.** Clicking it stamped
+  `enableTimestamp` = early the next morning (observed
+  `2026-07-03T06:59:59.999`, no tz suffix — end of service day whether read
+  as UTC→~3am EDT or as local — exact tz semantics unresolved and not
+  load-bearing). GoTab flips the item back to Available on its own.
+  Consequence: an 86'd item is RUNTIME state, not catalog membership — it
+  belongs in our catalog as `available:false`, not skipped.
+- **Current import behavior, precisely:** the `orderEnabled === false` filter
+  skips BOTH Unavailable and Hidden at import (lockstep), so no 86'd item
+  imports as orderable. The REAL confirmed bug is re-import divergence: an
+  item imported while Available and later 86'd/hidden in GoTab is filtered
+  out of the fetched list, so re-import never touches it — our copy stays
+  orderable indefinitely while GoTab says otherwise. (Same root as the
+  earlier-recorded "items dropped from GoTab never deactivated" note; now
+  mechanism-verified.)
+- **Caveat:** only the dashboard toggle was probed. If another GoTab surface
+  can 86 indefinitely (no enableTimestamp), that state is indistinguishable
+  from Hidden to us — acceptable: both mean "don't show diners this now."
+- CUSTOM back-office products carry the Hidden signature
+  (false/false/null) — consistent; the existing CUSTOM filter stands.
+- Product type has **74 fields**; future-use candidates spotted: `archived`
+  (soft delete, null on live rows), `manualDelayUntil`, `description`,
+  `shortName`, `images`, `sku`, `tags`. `basePrice`-is-cents re-confirmed.
+
+**Fix — BUILT + VERIFIED live 2026-07-02:** tri-state
+classification lives in the pure, unit-tested `gotab-availability.ts` (6 new
+tests lock the verified mapping); `listProducts` drops HIDDEN/CUSTOM and
+returns UNAVAILABLE products flagged; the import route creates UNAVAILABLE
+items as local `available:false`, syncs `available` both directions on
+re-import, and runs a deactivation sweep over GoTab-linked local items
+missing from the fetched list; the import response + admin summary NAME
+everything unavailable or deactivated (finding-#5 mitigation). GoTab is the
+availability source of truth ONLY for GoTab-linked items; hand-added items
+(null gotabProductUuid) are never touched by sync; `hideItemsMissingPrep`
+applies at creation only. Mock catalog gained a 4th UNAVAILABLE item
+("Seasonal Soup") so the 86'd path is demoable offline.
+
+Verified with a full live Konjo round-trip: (1) 86 Item 4 → import → 4
+imported, Item 4 named as 86'd and absent from the card; (2) hide Item 3 →
+re-import → 3 imported, sweep deactivated Item 3 BY NAME while still
+reporting Item 4's 86; (3) restore both → re-import → all 4 back, no
+warnings, no duplicates, and Item 3's confirmed 5-min prep SURVIVED the
+hidden→deactivated→restored cycle (deactivation touches only `available`).
+Unit suite 18/18; typecheck clean. Also noted during testing: the admin UI
+auto-enters the dashboard on a stored-but-expired JWT (12h TTL) and only
+surfaces "Invalid or missing token" on the first privileged call — cosmetic
+backlog item: catch 401s in the admin `api()` helper and bounce to login.
 
 
 

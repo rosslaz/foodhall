@@ -2,6 +2,7 @@ import { config } from '../config/index.js';
 import { AppError } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 import { getGoTabAuth } from './gotab-auth.js';
+import { classifyGoTabProduct } from './gotab-availability.js';
 import { GoTabClient } from './gotab-client.js';
 import { mapGoTabStatus } from './gotab-status.js';
 import type {
@@ -131,7 +132,10 @@ export class GoTabAdapter implements VendorAdapter {
   //     Write-Off, etc.), NOT menu items — filter them out. Keep DEFAULT.
   //   - prepTime is in MINUTES; ×60 to seconds. Treat both null AND 0 as
   //     "unset" -> null (own prep table is the source of truth; admin fills in).
-  //   - orderEnabled/available: skip items not orderable.
+  //   - availability: classified via gotab-availability.ts (empirically
+  //     verified tri-state; enableTimestamp discriminates 86'd vs hidden).
+  //     HIDDEN and CUSTOM are dropped; UNAVAILABLE (86'd) products ARE
+  //     returned, flagged, so the import can carry them as available:false.
   async listProducts(locationUuid: string): Promise<VendorCatalog> {
     const query = `query ($loc: String!) {
       location(locationUuid: $loc) {
@@ -144,6 +148,7 @@ export class GoTabAdapter implements VendorAdapter {
           prepTime
           orderEnabled
           available
+          enableTimestamp
         }
       }
     }`;
@@ -158,16 +163,20 @@ export class GoTabAdapter implements VendorAdapter {
           prepTime: number | null;
           orderEnabled: boolean | null;
           available: boolean | null;
+          enableTimestamp: string | null;
         }> | null;
       } | null;
     }>(query, { loc: locationUuid });
 
     const list = data.location?.productsList ?? [];
     const products: VendorProduct[] = [];
+    let hiddenOrCustom = 0;
     for (const p of list) {
-      // Skip back-office payment instruments and anything not orderable.
-      if ((p.productType ?? '').toUpperCase() === 'CUSTOM') continue;
-      if (p.orderEnabled === false) continue;
+      const disposition = classifyGoTabProduct(p);
+      if (disposition === 'CUSTOM' || disposition === 'HIDDEN') {
+        hiddenOrCustom++;
+        continue;
+      }
       // prepTime: minutes -> seconds; null or 0 -> unset (null).
       const prepSeconds =
         p.prepTime && p.prepTime > 0 ? Math.round(p.prepTime * 60) : null;
@@ -176,10 +185,17 @@ export class GoTabAdapter implements VendorAdapter {
         name: p.name,
         priceCents: p.basePrice ?? 0,
         prepSeconds,
+        availability: disposition,
       });
     }
     logger.info(
-      { locationUuid, total: list.length, imported: products.length },
+      {
+        locationUuid,
+        total: list.length,
+        returned: products.length,
+        unavailable: products.filter((p) => p.availability === 'UNAVAILABLE').length,
+        skippedHiddenOrCustom: hiddenOrCustom,
+      },
       'listed GoTab products for import',
     );
     return { locationName: data.location?.name ?? null, products };

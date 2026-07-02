@@ -61,7 +61,7 @@
 
     <div class="card">
       <strong>Import a vendor menu from GoTab</strong>
-      <p class="muted" style="margin:4px 0 10px">Pulls the location's products (name, price, prep time) from GoTab and creates the vendor + menu here. Re-importing updates in place. Items GoTab has no prep time for are flagged — set a real prep time before they'll sync well.</p>
+      <p class="muted" style="margin:4px 0 10px">Pulls the location's products (name, price, prep time, availability) from GoTab and creates the vendor + menu here. Re-importing updates in place and syncs availability (86'd items import as unavailable; items gone from GoTab are deactivated). Items GoTab has no prep time for are flagged — set a real prep time before they'll sync well.</p>
       <div class="row">
         <input id="importVendorName" placeholder="Vendor name (optional — defaults to GoTab's)" style="width:280px" />
         <input id="importGotabLoc" placeholder="GoTab location UUID" style="width:280px" />
@@ -190,6 +190,14 @@ async function importGotab(){
     if(r.needingPrepTime>0){
       summary+=' \u26a0 '+r.needingPrepTime+' item'+(r.needingPrepTime===1?'':'s')+
         ' had no prep time in GoTab — set a real prep time below before they\u2019ll sync.';
+    }
+    if(r.unavailableItems && r.unavailableItems.length){
+      summary+=' \u26a0 Currently 86\u2019d in GoTab, imported as unavailable (not shown below; re-import after GoTab restores them): '+
+        r.unavailableItems.join(', ')+'.';
+    }
+    if(r.deactivatedItems && r.deactivatedItems.length){
+      summary+=' \u26a0 Deactivated here (no longer offered in GoTab): '+
+        r.deactivatedItems.join(', ')+'.';
     }
     msgEl.textContent=summary;
     document.getElementById('importVendorName').value='';

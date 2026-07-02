@@ -104,15 +104,17 @@ export class MockGoTabAdapter implements VendorAdapter {
 
   // Returns a small fake catalog so the GoTab menu-import flow can be exercised
   // in mock mode. One item deliberately has null prepSeconds to demo the
-  // "needs a prep time" path the real sandbox produces (GoTab prepTime is
-  // usually blank). The locationUuid is echoed into the product ids so repeated
+  // "needs a prep time" path, and one is UNAVAILABLE to demo the 86'd path
+  // (imported as available:false) — both mirror what the real sandbox
+  // produces. The locationUuid is echoed into the product ids so repeated
   // imports of the same mock location are idempotent (stable uuids).
   async listProducts(locationUuid: string): Promise<VendorCatalog> {
     const tag = locationUuid.slice(0, 6);
     const products: VendorProduct[] = [
-      { gotabProductUuid: `mockprd_${tag}_burger`, name: 'Smash Burger', priceCents: 1200, prepSeconds: 480 },
-      { gotabProductUuid: `mockprd_${tag}_fries`, name: 'Fries', priceCents: 500, prepSeconds: 240 },
-      { gotabProductUuid: `mockprd_${tag}_shake`, name: 'Milkshake', priceCents: 700, prepSeconds: null },
+      { gotabProductUuid: `mockprd_${tag}_burger`, name: 'Smash Burger', priceCents: 1200, prepSeconds: 480, availability: 'AVAILABLE' },
+      { gotabProductUuid: `mockprd_${tag}_fries`, name: 'Fries', priceCents: 500, prepSeconds: 240, availability: 'AVAILABLE' },
+      { gotabProductUuid: `mockprd_${tag}_shake`, name: 'Milkshake', priceCents: 700, prepSeconds: null, availability: 'AVAILABLE' },
+      { gotabProductUuid: `mockprd_${tag}_soup`, name: 'Seasonal Soup', priceCents: 600, prepSeconds: 300, availability: 'UNAVAILABLE' },
     ];
     return { locationName: `Mock Vendor ${tag}`, products };
   }

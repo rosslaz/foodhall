@@ -41,11 +41,17 @@ export type VendorTicketStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'READY' | 'CANCEL
 // A product read from the vendor's catalog, normalized to our units/shape.
 // prepSeconds is null when the platform has no usable prep time (GoTab returns
 // null OR 0 for "unset" — both map to null here; the admin fills it in).
+// availability: AVAILABLE = orderable now; UNAVAILABLE = temporarily 86'd on
+// the platform (import as local available:false — the platform auto-restores
+// it). HIDDEN/CUSTOM products are never returned by listProducts at all.
+export type VendorProductAvailability = 'AVAILABLE' | 'UNAVAILABLE';
+
 export interface VendorProduct {
   gotabProductUuid: string;
   name: string;
   priceCents: number;
   prepSeconds: number | null;
+  availability: VendorProductAvailability;
 }
 
 // Result of reading a location's catalog for menu import: the location's own
