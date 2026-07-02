@@ -81,6 +81,16 @@ const API='/api';
 let token=localStorage.getItem('admin_token');
 let hallId=null;
 
+// XSS guard (review finding #2): every dynamic string interpolated into
+// innerHTML goes through esc(). Item/location names come from the GoTab
+// import (semi-trusted external data); vendor names and gotabLocationId are
+// admin-entered. Escape uniformly rather than judging each string. (Ids used
+// in element ids / onclick args are our own UUIDs — hex and dashes only.)
+function esc(s){
+  return String(s).replace(/[&<>"']/g,(c)=>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
 function authHeaders(){ return token?{'Authorization':'Bearer '+token}:{}; }
 async function api(path,opts={}){
   // Header only when a body exists — Fastify rejects empty JSON bodies.
@@ -129,14 +139,14 @@ async function loadVendors(){
       const rowStyle=needsPrep?' style="background:rgba(226,92,92,0.06)"':'';
       const priceStr='$'+(it.priceCents/100).toFixed(2);
       return '<tr'+rowStyle+'>'
-        +'<td>'+it.name+'</td>'
+        +'<td>'+esc(it.name)+'</td>'
         +'<td>'+priceStr+'</td>'
-        +'<td><input value="'+prepVal+'" placeholder="—" id="prep_'+it.id+'" style="width:56px"> min '
+        +'<td><input value="'+esc(prepVal)+'" placeholder="—" id="prep_'+it.id+'" style="width:56px"> min '
           +'<button class="ghost" style="padding:4px 8px" onclick="savePrep(\''+it.id+'\')">save</button></td>'
         +'<td>'+flag+'</td></tr>';
     }).join('');
-    const gotabLabel=v.gotabLocationId ? ('GoTab: '+v.gotabLocationId) : 'no GoTab id';
-    card.innerHTML='<div class="row" style="justify-content:space-between"><strong>'+v.name+'</strong>'
+    const gotabLabel=v.gotabLocationId ? ('GoTab: '+esc(v.gotabLocationId)) : 'no GoTab id';
+    card.innerHTML='<div class="row" style="justify-content:space-between"><strong>'+esc(v.name)+'</strong>'
       +'<span class="muted">'+gotabLabel+'</span></div>'
       +'<table style="margin-top:10px"><tr><th>Item</th><th>Price</th><th>Prep</th><th></th></tr>'+rows+'</table>'
       +'<div class="row" style="margin-top:10px">'
@@ -203,7 +213,7 @@ async function loadActivity(){
   const el=document.getElementById('activity');
   if(!res.groups.length){ el.textContent='No active groups.'; return; }
   el.innerHTML='<table><tr><th>Code</th><th>Status</th><th>People</th><th>Kitchens</th><th>Ready at</th></tr>'+
-    res.groups.map(g=>'<tr><td>'+g.joinCode+'</td><td><span class="pill">'+g.status.toLowerCase()+'</span></td><td>'+
+    res.groups.map(g=>'<tr><td>'+esc(g.joinCode)+'</td><td><span class="pill">'+esc(g.status.toLowerCase())+'</span></td><td>'+
     g.members.length+'</td><td>'+g.tickets.length+'</td><td>'+
     (g.targetReadyAt?new Date(g.targetReadyAt).toLocaleTimeString():'—')+'</td></tr>').join('')+'</table>';
 }

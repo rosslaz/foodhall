@@ -35,9 +35,12 @@ export interface GoTabCredentials {
 
 // Resolve credentials from config, preferring the real ACCESS_* field names and
 // falling back to the legacy KEY/SECRET placeholders. Throws if neither is set.
+// `||` (not `??`) on purpose: config now coerces blank env values to undefined,
+// but || also treats a stray '' as absent — belt and braces against the
+// empty-string-shadows-populated-legacy-name bug (review finding #1).
 export function resolveGoTabCredentials(): GoTabCredentials {
-  const apiAccessId = config.GOTAB_API_ACCESS_ID ?? config.GOTAB_API_KEY;
-  const apiAccessSecret = config.GOTAB_API_ACCESS_SECRET ?? config.GOTAB_API_SECRET;
+  const apiAccessId = config.GOTAB_API_ACCESS_ID || config.GOTAB_API_KEY;
+  const apiAccessSecret = config.GOTAB_API_ACCESS_SECRET || config.GOTAB_API_SECRET;
   if (!apiAccessId || !apiAccessSecret) {
     throw new AppError(
       500,

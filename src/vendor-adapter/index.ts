@@ -26,9 +26,13 @@ let importInstance: VendorAdapter | null = null;
 // so a dev with no .env secrets can still exercise the import UI end-to-end.
 export function getImportAdapter(): VendorAdapter {
   if (importInstance) return importInstance;
+  // `||` (not `??`): config coerces blank env values to undefined, and || also
+  // treats a stray '' as absent — previously a blank ACCESS_* line made
+  // hasCreds falsy and this SILENTLY fell back to the mock while looking
+  // configured (review finding #1).
   const hasCreds =
-    (config.GOTAB_API_ACCESS_ID ?? config.GOTAB_API_KEY) &&
-    (config.GOTAB_API_ACCESS_SECRET ?? config.GOTAB_API_SECRET);
+    (config.GOTAB_API_ACCESS_ID || config.GOTAB_API_KEY) &&
+    (config.GOTAB_API_ACCESS_SECRET || config.GOTAB_API_SECRET);
   importInstance = hasCreds ? new GoTabAdapter() : new MockGoTabAdapter();
   return importInstance;
 }

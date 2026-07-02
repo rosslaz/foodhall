@@ -33,6 +33,14 @@ const API='/api';
 const groups=new Map();
 function money(c){return '$'+(c/100).toFixed(2);}
 
+// XSS guard (review finding #2): every dynamic string interpolated into
+// innerHTML goes through esc(). Vendor names come from the admin or the GoTab
+// import; escape uniformly rather than judging each string.
+function esc(s){
+  return String(s).replace(/[&<>"']/g,(c)=>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
 async function loadActive(){
   // Board reads the default hall, then fetches each active group it learns about
   // via websocket. For MVP we poll the hall's active groups through a light call.
@@ -53,11 +61,11 @@ function render(){
     const div=document.createElement('div'); div.className='group';
     const target=g.targetReadyAt?new Date(g.targetReadyAt).getTime():0;
     div.innerHTML=
-      '<div class="code">'+g.joinCode+'</div>'+
+      '<div class="code">'+esc(g.joinCode)+'</div>'+
       '<div class="when">'+g.members.length+' people · '+g.tickets.length+' kitchens</div>'+
       '<div class="timer" data-target="'+target+'">--:--</div>'+
-      g.tickets.map(t=>'<div class="tk"><span>'+t.vendor.name+'</span><span class="badge '+
-        (t.status==='READY'?'ready':t.status==='FIRED'?'fired':'')+'">'+t.status.toLowerCase()+'</span></div>').join('');
+      g.tickets.map(t=>'<div class="tk"><span>'+esc(t.vendor.name)+'</span><span class="badge '+
+        (t.status==='READY'?'ready':t.status==='FIRED'?'fired':'')+'">'+esc(t.status.toLowerCase())+'</span></div>').join('');
     grid.appendChild(div);
   }
 }

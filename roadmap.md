@@ -252,6 +252,13 @@ durable BullMQ jobs survive provider restarts.
 ### 3.2 Production configuration
 
 - CORS: lock `origin` to the deployed domain (currently `origin: true`).
+- **`trustProxy`: REQUIRED behind any PaaS/load balancer** (review finding
+  2026-07-02). Without it `req.ip` is the proxy's address, so M4's per-IP rate
+  limits collapse into ONE shared bucket for the whole venue — Friday night
+  collectively hits the 30/min group-create cap, the exact failure M4 was
+  designed to avoid. Set `Fastify({ trustProxy: true })` (or the platform's
+  documented hop count) in production; verify `req.ip` shows real client IPs
+  in staging before launch.
 - Add `@fastify/helmet` for security headers.
 - Secrets: strong `JWT_SECRET`, GoTab production credentials, all via the
   platform's secret store — nothing in the repo.

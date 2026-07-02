@@ -680,6 +680,100 @@ running dev server + worker lock `query_engine-windows.dll.node`, so
 node processes are stopped first. Stop server + worker → generate/migrate →
 restart.
 
+---
+
+## Full-codebase review — 2026-07-02
+
+Complete read of both docs and every file in the repo (all migrations, all src
+modules, all adapter files, all frontends, scripts, configs; `.env` excluded on
+principle, `package-lock.json` as generated). Docs and code agree almost
+everywhere; the conditional-updateMany discipline, S5 allowlists, sweep
+branching on `holdsSchedule`, and import re-import semantics all check out as
+written. Findings below, worst first.
+
+### Bugs / latent traps
+
+1. **[FIXED 2026-07-02] Empty-string credentials defeat the fallback and the
+   import adapter.** `resolveGoTabCredentials()` and `getImportAdapter()` used
+   `??` to prefer `GOTAB_API_ACCESS_ID/SECRET` over legacy `GOTAB_API_KEY/
+   SECRET` — but `??` only falls through on null/undefined, and a
+   present-but-blank line in `.env` (exactly what `.env.example` ships) is
+   `''`, not nullish. Consequences: blank ACCESS_* vars shadowed populated
+   legacy vars (boot error), and `getImportAdapter()`'s `hasCreds` went falsy
+   → **import silently used the mock while looking configured.** Fix: config
+   schema now preprocesses blank env values to `undefined` on every optional
+   GoTab field (creds + URLs — a blank `GOTAB_API_BASE`/`GOTAB_OAUTH_URL` also
+   used to fail `.url()` and kill boot), and the two consumers use `||` as
+   belt-and-braces.
+2. **[FIXED 2026-07-02] Stored XSS via diner display names.** All
+   frontends built DOM by string-concatenated innerHTML. `Member.displayName`
+   is unauthenticated diner input rendered into other members' browsers
+   (customer `renderSummary`/`renderMyOrder`); a name like
+   `<img src=x onerror=…>` ran script as every group member (could lock, pay,
+   remove items as the victim). Milder variant: GoTab product/location names
+   rendered unescaped in the authenticated admin page. **Fix:** an `esc()`
+   helper (entity-escapes `& < > " '`) added to all three UIs and applied
+   uniformly to EVERY dynamic string interpolated into innerHTML — user input,
+   GoTab-derived names, and our own enums alike (a uniform rule beats
+   per-string judgment). Element ids / onclick args deliberately left
+   unescaped: our own Prisma UUIDs, hex+dashes only. Smoke-verified in the
+   browser: a host named `<b>bold</b>` renders as literal text in the group
+   view. Frontends were rewritten whole — edit_file has corrupted this
+   concatenated HTML twice; always full-file rewrite for public/*.html.
+3. **[OPEN — roadmap 3.2] `trustProxy` never set — rate limiting inverts
+   behind a production proxy.** M4's per-IP limits assume `req.ip` is the
+   client; behind Render/Railway's LB it's the proxy, so the whole venue
+   shares one bucket and Friday night collectively hits the 30/min
+   group-create cap — the exact failure M4's design avoided. Production
+   config must set `trustProxy` appropriately. Recorded in roadmap 3.2.
+4. **[OPEN — fix when it bites] Parent-location import will likely blow the
+   transaction timeout.** Import does 2 sequential queries per product inside
+   one interactive Prisma transaction (default 5s). Konjo's 4 items are
+   trivial; the parent sandbox rolls up ~400 products → ~800 round-trips →
+   P2028 on any remote Postgres. Fix: batch (one findMany on all UUIDs +
+   createMany / targeted updates) or raise the transaction timeout.
+
+### Design gaps (decide deliberately)
+
+5. **Admin page can't see hidden items or inactive vendors.** It reads the
+   PUBLIC menu endpoint (filters `active`/`available`), so the "hidden" pill
+   is dead code, `hideItemsMissingPrep` would make items vanish from the
+   admin's own view with no way back, and deactivating a vendor removes it
+   from management. Latent (nothing sets available=false yet). Needs an
+   admin-gated unfiltered menu view before any hide/deactivate feature.
+6. **Pay-after-drop leaves a paid member with dropped items and no refund
+   path.** Pay route accepts LOCKED *or SCHEDULED*; a timed-out member can pay
+   after their items were DROPPED. `PayStatus.REFUNDED` exists but nothing
+   sets it. Mock-money harmless; Branch A may make the route dormant — but if
+   mock pay survives into the POC, reject SCHEDULED payment from members with
+   zero ACTIVE items.
+7. **Unconfirmed-prep hazard is customer-visible today** (priority bump on the
+   documented deferred item): unconfirmed imported items show "~0 min" on the
+   customer menu, are orderable, and the estimator returns their current 0
+   prep (overriding even the snapshot) → they fire last with zero cook time
+   budgeted. Do the enforcement follow-up BEFORE seeding real DSC menus via
+   import.
+
+### Doc drift (batch-fix)
+
+- README: still says the GoTab scaffold sets `holdsSchedule = true` and
+  "implement the three methods" (it's four, default false, fork unresolved);
+  no mention of the import feature or prepConfirmed.
+- `.env.example`: **[FIXED 2026-07-02]** named the OAuth var
+  `GOTAB_OAUTH_TOKEN_URL` while config reads `GOTAB_OAUTH_URL` (masked only
+  because the default equals the right URL); still called the ACCESS_* rename
+  "owed" though done; lacked the `GOTAB_API_ACCESS_ID/SECRET` lines the code
+  prefers. Now matches config.
+- `scripts/*.ts` sit outside tsconfig `include` — `reset-konjo.ts` is never
+  typechecked. `mutations.json` is an unlabeled introspection dump at repo
+  root (harmless; label or move to docs/ someday).
+
+### Suggested order
+
+#1 + `.env.example` together (done); #2 XSS escaping (done, smoke-verified);
+#3 as a roadmap-3.2 line (done); #4–#6 recorded known-issues; #7 folded into
+the existing enforcement follow-up with raised priority.
+
 
 
 

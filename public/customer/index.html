@@ -124,6 +124,16 @@
 const API = '/api';
 const state = { groupId: null, memberId: null, token: null, isHost: false, hallId: null, group: null, ws: null };
 
+// XSS guard (review finding #2): EVERY dynamic string interpolated into
+// innerHTML goes through esc(). Member display names are unauthenticated
+// diner input rendered into OTHER members' browsers; menu/vendor names come
+// from the admin or the GoTab import. Escape uniformly — no case-by-case
+// judgment about which strings are "safe".
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 function toast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('show');
@@ -197,11 +207,11 @@ async function loadMenu() {
   const el = document.getElementById('menu'); el.innerHTML = '';
   for (const v of vendors) {
     const card = document.createElement('div'); card.className = 'card';
-    card.innerHTML = '<div class="vendor">' + v.name + '</div>';
+    card.innerHTML = '<div class="vendor">' + esc(v.name) + '</div>';
     for (const it of v.menuItems) {
       const row = document.createElement('div'); row.className = 'item';
       row.innerHTML =
-        '<div><div class="name">' + it.name + '</div>' +
+        '<div><div class="name">' + esc(it.name) + '</div>' +
         '<div class="meta">' + money(it.priceCents) + ' · ~' + Math.round(it.prepSeconds/60) + ' min</div></div>';
       const btn = document.createElement('button'); btn.className = 'sm'; btn.textContent = 'Add';
       btn.onclick = () => addItem(it.id);
@@ -240,8 +250,8 @@ function renderMyOrder(g) {
   el.innerHTML = '';
   for (const oi of me.orderItems) {
     const row = document.createElement('div'); row.className = 'item';
-    row.innerHTML = '<div><div class="name">' + oi.qty + '× ' + oi.menuItem.name + '</div>' +
-      '<div class="meta">' + oi.menuItem.vendor.name + ' · ' + money(oi.priceCentsSnapshot * oi.qty) + '</div></div>';
+    row.innerHTML = '<div><div class="name">' + oi.qty + '× ' + esc(oi.menuItem.name) + '</div>' +
+      '<div class="meta">' + esc(oi.menuItem.vendor.name) + ' · ' + money(oi.priceCentsSnapshot * oi.qty) + '</div></div>';
     if (g.status === 'OPEN') {
       const b = document.createElement('button'); b.className = 'sm ghost'; b.textContent = 'Remove';
       b.onclick = () => removeItem(oi.id); row.appendChild(b);
@@ -255,7 +265,7 @@ function renderSummary(g) {
   const lines = g.members.map(m => {
     const cnt = m.orderItems.reduce((s, i) => s + i.qty, 0);
     const paid = m.payStatus === 'PAID' ? '<span class="pill ok">paid</span>' : '<span class="pill">unpaid</span>';
-    return '<div class="item"><div><span class="name">' + m.displayName + (m.isHost ? ' (host)' : '') +
+    return '<div class="item"><div><span class="name">' + esc(m.displayName) + (m.isHost ? ' (host)' : '') +
       '</span><div class="meta">' + cnt + ' item' + (cnt === 1 ? '' : 's') + '</div></div>' +
       (g.status === 'OPEN' ? '' : paid) + '</div>';
   }).join('');
@@ -304,8 +314,8 @@ function startCountdown(g) {
   tick(); countdownTimer = setInterval(tick, 1000);
   const tl = document.getElementById('ticketList');
   tl.innerHTML = g.tickets.map(t =>
-    '<div class="item"><span class="name">' + t.vendor.name + '</span><span class="pill' +
-    (t.status === 'READY' ? ' ok' : t.status === 'FIRED' ? ' warn' : '') + '">' + t.status.toLowerCase() + '</span></div>'
+    '<div class="item"><span class="name">' + esc(t.vendor.name) + '</span><span class="pill' +
+    (t.status === 'READY' ? ' ok' : t.status === 'FIRED' ? ' warn' : '') + '">' + esc(t.status.toLowerCase()) + '</span></div>'
   ).join('');
 }
 

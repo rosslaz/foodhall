@@ -1,5 +1,19 @@
 import { z } from 'zod';
 
+// A present-but-blank line in .env (e.g. `GOTAB_API_KEY=` straight from the
+// template) arrives as '' — which is NOT nullish, so it silently defeats `??`
+// fallbacks and truthiness checks downstream ('' shadowed populated legacy
+// credential names, and made getImportAdapter() think creds were absent).
+// Coerce blank to undefined BEFORE validation so "blank" and "unset" are the
+// same thing everywhere. Also applied to the URL fields: a blank value would
+// otherwise fail .url() and kill boot, instead of falling back to the default.
+const blankToUndef = (v: unknown) =>
+  typeof v === 'string' && v.trim() === '' ? undefined : v;
+const optionalString = z.preprocess(blankToUndef, z.string().optional());
+const optionalUrl = z.preprocess(blankToUndef, z.string().url().optional());
+const urlWithDefault = (def: string) =>
+  z.preprocess(blankToUndef, z.string().url().default(def));
+
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(3000),
@@ -8,19 +22,19 @@ const schema = z.object({
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
   VENDOR_ADAPTER: z.enum(['mock', 'gotab']).default('mock'),
-  GOTAB_API_BASE: z.string().url().optional(),
+  GOTAB_API_BASE: optionalUrl,
   // GoTab's OAuth token endpoint (JSON-body POST, not the form-encoded
   // grant_type=client_credentials standard — see project doc "Auth"). Defaults
   // to the known sandbox/prod host; override per environment if needed.
-  GOTAB_OAUTH_URL: z.string().url().default('https://gotab.io/api/oauth/token'),
-  GOTAB_GRAPH_URL: z.string().url().default('https://gotab.io/api/v2/graph'),
+  GOTAB_OAUTH_URL: urlWithDefault('https://gotab.io/api/oauth/token'),
+  GOTAB_GRAPH_URL: urlWithDefault('https://gotab.io/api/v2/graph'),
   // Real GoTab credential field names (Client Credentials flow). The adapter
   // reads these; GOTAB_API_KEY/SECRET below are the legacy placeholder names,
   // kept optional so existing .env files don't break. Prefer the ACCESS_* names.
-  GOTAB_API_ACCESS_ID: z.string().optional(),
-  GOTAB_API_ACCESS_SECRET: z.string().optional(),
-  GOTAB_API_KEY: z.string().optional(),
-  GOTAB_API_SECRET: z.string().optional(),
+  GOTAB_API_ACCESS_ID: optionalString,
+  GOTAB_API_ACCESS_SECRET: optionalString,
+  GOTAB_API_KEY: optionalString,
+  GOTAB_API_SECRET: optionalString,
   GROUP_READY_WINDOW_SECONDS: z.coerce.number().default(120),
   PAYMENT_TIMEOUT_SECONDS: z.coerce.number().default(300),
   // OPEN groups older than this are cancelled by the worker sweep (a group
