@@ -20,6 +20,15 @@ plan.
 2026-06-26 — parent *Detroit Shipping Sandbox* + two children *Konjo Me
 Sandbox* and *Motor Burger Sandbox*; **OAuth** integration "Food Hall Sync -
 DSC". 2.1 below is done; the adapter build (2.4) is the next real work.
+**UNBLOCKED 2026-07-02 (Zach):** order creation without settlement confirmed
+— `openTab: true`, omit `payments[]`; the order reaches the KDS on its
+`scheduled` timing with no processor. Cash processors are PERMANENTLY
+unreachable under Client Credentials (server-session access model — not a
+config issue; stop looking). Consequence: the 2.2 empirical plan is runnable
+now, 2.4 `submitTicket` builds against the open-tab flow, and the
+holdsSchedule fork resolves empirically. Probe the open-tab schema first
+(field names unverified) — same discipline as the availability mapping.
+Full detail in the project doc ("PROCESSOR BLOCKER RESOLVED").
 
 ### 2.1 Environment & auth — DONE (2026-06-26)
 
@@ -71,6 +80,14 @@ Record all four answers in `foodhall-sync-project.md` — they are decision
 inputs, not trivia.
 
 ### 2.3 DECISION GATE — payment ownership (the documented divergence)
+
+**New input (2026-07-02):** API settlement of Cash is IMPOSSIBLE under our
+Client Credentials integration by design (server-session access model); any
+our-side settlement would require an Authorization Code integration
+inheriting server permissions — avoid that complexity. This strengthens
+Branch A. New question to verify before the gate closes: can diners pay an
+integration-created OPEN tab through GoTab's normal consumer flow? If yes,
+that is the production payment shape.
 
 The codebase currently takes payment itself (mock, Stripe-shaped seam) and
 then schedules; GoTab's model puts payment on the shared tab. Decide in the
@@ -334,6 +351,12 @@ wiring, not work. Deploy only on green.
   hold on normal venue operation.
 
 ### 3.7 Pre-POC checklist with Jon
+
+**Operator questionnaire prepared 2026-07-02: `jon-questionnaire.md`** — run
+it at the upcoming meeting BEFORE this checklist; its ⭐ questions resolve
+design-blocking assumptions (max-vs-sum cooking, KDS/bump reality per vendor,
+86-toggle usage, shared-tab payment mechanics, pickup UX) and its answers
+feed 3.7/4.1/4.2 directly. Transcribe answers into the project doc after.
 
 - Seed real DSC vendors, menus, prices, and honest prep-time estimates
   **into our own prep-time table** (these seed the scheduler — garbage in,

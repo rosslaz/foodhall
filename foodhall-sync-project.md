@@ -347,8 +347,8 @@ you have NOT made a successful REST call yet, only GraphQL.
 - [x] Confirmed order timestamp/status granularity
 - [x] Sandbox access provisioned (parent + 2 children; OAuth credentials issued) — 2026-06-25
 - [x] Confirm OAuth mechanics + make first authenticated call (Phase 2.1) — 2026-06-26 (token + GraphQL locationsList both verified)
-- [ ] Run sandbox test plan (scheduling behavior, tab integrity, load calibration) — full Phase 2–5 plan in `roadmap.md`
-- [ ] Build MVP scheduler
+- [x] Build MVP scheduler (MVP + review fixes + must-have and should-have hardening tiers all verified — see dated sections below)
+- [ ] Run sandbox test plan (scheduling behavior, tab integrity, load calibration) — **UNBLOCKED 2026-07-02** via open tabs (see "PROCESSOR BLOCKER RESOLVED"); next action = open-tab probe, then Motor seeding, then submitTicket
 - [ ] POC at DSC
 - [ ] Fastify 5 migration (clears npm audit criticals — see "Known issue" section; post-POC, pre-rollout)
 - [ ] Consider broader rollout (loop in GoTab partnerships)
@@ -889,6 +889,157 @@ Unit suite 18/18; typecheck clean. Also noted during testing: the admin UI
 auto-enters the dashboard on a stored-but-expired JWT (12h TTL) and only
 surfaces "Invalid or missing token" on the first privileged call — cosmetic
 backlog item: catch 401s in the admin `api()` helper and bounce to login.
+
+---
+
+## DECISION: the mock adapter is PERMANENT — do not remove (2026-07-02)
+
+Raised: "do we need the mock path now that we have the sandbox?" Answer: yes,
+indefinitely. Do not delete it in any cleanup pass. Reasons, in order:
+
+1. The sandbox cannot run the core loop — order creation is blocked
+   (settlement), so lock→fire→ready→COMPLETED works ONLY in mock mode today.
+2. The integration suite (and future CI, roadmap 3.4) runs hermetically on
+   the mock; live-GoTab verification is the SEPARATE opt-in `test:gotab`
+   suite (roadmap 2.7). Not substitutable.
+3. The sandbox has NO KITCHEN — nothing bumps tickets — so even after the
+   blocker resolves, live orders hang at SENT without a human in the
+   dashboard. The mock simulates the kitchen (finishes at targetReadyAt by
+   design): the mock DEMOS the product, the sandbox VERIFIES the integration.
+4. The prep-estimation spec (Phase F, MOCK_KITCHEN_REALISM) is built on it,
+   and it is the reference implementation of the VendorAdapter contract
+   (compile-enforced parity — interface changes force the mock to keep up).
+5. Cost ≈ zero: one file behind the factory, no runtime footprint in gotab
+   mode.
+
+The operative pattern is PER-CAPABILITY migration, already in effect:
+catalog reads use real GoTab whenever creds exist (getImportAdapter);
+firing stays mock until the sandbox can actually do it. Capabilities move
+to real individually as the sandbox earns them — never a global switch,
+never a deletion.
+
+---
+
+## Operator questionnaire for Jon — PREPARED (2026-07-02)
+
+`jon-questionnaire.md` — 35 questions for the upcoming meeting, scoped to
+operator-answerable unknowns only (API questions stay with Zach). The ⭐
+design-blockers it resolves: per-vendor parallel-vs-sequential cooking (the
+scheduler's max-vs-sum assumption), which vendors run a KDS and bump honestly
+(whether prepared−sent telemetry exists per vendor), whether vendors actually
+use the 86 toggle (the availability-sync trust assumption), how shared-tab
+payment/settlement really works at DSC (Branch A viability), pickup mechanics
+(who moves the food — shapes the entire ready-together UX), the 120s window
+and payment-timeout social acceptability, pilot vendor selection + baseline
+measurement, and the production-GoTab authorization path. Rule: answers get
+transcribed back into this doc as a dated section — decision inputs, same as
+sandbox findings.
+
+---
+
+## PROCESSOR BLOCKER RESOLVED — open tabs, no settlement (2026-07-02, Zach)
+
+Zach's reply to the two standing questions, verbatim in substance:
+
+1. **No processor fix exists under Client Credentials — permanently.** The
+   PROCESSOR_INVALID error was never a naming/config issue. Cash processors
+   are server-assigned and usable only through a SERVER SESSION (POS pin-in,
+   or OAuth **Authorization Code** auth that inherits a server's
+   permissions). Client Credentials has no server context, so there is NO
+   path to a Cash processor via our integration. Access model, not config.
+   Stop looking for a processor string/uuid — the search is over by design.
+2. **Order creation WITHOUT settlement: `openTab: true`, omit `payments[]`
+   entirely.** The order reaches the KDS on its `scheduled` timing without
+   touching a processor. The closed-tab-must-settle constraint applied to
+   closed tabs only. Settlement can be "circled back" later IF the POC needs
+   it — Zach's read (and ours) is that it doesn't, for the timing goal.
+
+### What this unblocks (nearly the whole critical path)
+
+- **Phase 2.2 empirical test plan is RUNNABLE NOW**: scheduled-fire tolerance
+  (Q1), live order-submission schema incl. the real `scheduled` field name
+  (Q3), status latency (Q4), and shared-tab multi-vendor behavior (Q2 — the
+  order/timing side; payment-settlement side deferred with settlement).
+- **`getTicketStatus`'s guessed `orderByOrderUuid` query is finally
+  verifiable** — a real order will exist to poll.
+- **`submitTicket` is buildable** against the open-tab flow (one order per
+  vendor on a tab, per-order `scheduled`).
+- **The `holdsSchedule` fork resolves empirically**: create a scheduled
+  order, observe whether GoTab holds it and fires at the timestamp. If yes
+  → `holdsSchedule = true` becomes real; if firing is unreliable → stay
+  `false` with our BullMQ timers.
+- **Prep-estimation Phase G ingestion feed** (ordersList observations) gets
+  its schema verification en route.
+
+### What it does NOT unblock / new questions it creates
+
+- **Settlement stays unsolved, deliberately.** Under Client Credentials it
+  is impossible for Cash by design; any our-side settlement would require an
+  Authorization Code integration with server context — avoid that
+  complexity. This STRENGTHENS Branch A (GoTab owns payment).
+- **New Branch-A production question (for sandbox/Zach later):** can diners
+  pay an integration-created open tab through GoTab's normal consumer flow?
+  That's the production payment shape if yes.
+- **Sandbox hygiene:** open tabs with no payment path will accumulate in the
+  dashboard. Find the cancel/close-without-settlement semantics early —
+  this is the same investigation as 2.4's `cancelTicket` item.
+- Open-tab creation schema itself is UNVERIFIED (openTab flag name, spot
+  requirement, items array shape, `scheduled` field name/format) — probe
+  before building submitTicket, same discipline as the availability mapping.
+
+---
+
+## SESSION INDEX — 2026-07-02 (everything above this date, one glance)
+
+Seven dated sections landed today; this is the index + standing next actions.
+
+1. **Full-codebase review** — 7 findings. #1 (empty-string creds defeat
+   fallback + silent-mock import) FIXED same day; #2 (stored XSS via
+   displayName) FIXED + smoke-verified; #3 (trustProxy) recorded as required
+   roadmap-3.2 production config; #4 (parent-import transaction timeout),
+   #5 (admin can't see hidden items), #6 (pay-after-drop), #7 (unconfirmed
+   prep customer-visible — priority-bumped) recorded open with fix shapes.
+2. **Prep-estimation system** — designed, then expanded into a full
+   implementation spec for a lesser-model build (`prep-estimation-design.md`:
+   conventions primer, exact schema/signatures/worked examples, phased gates).
+   Deliberately NOT built. Entry point when built: Phase A (finding-#7
+   enforcement, state-based scope).
+3. **GoTab availability mapping** — empirically verified (probe script kept):
+   dashboard tri-state = lockstep booleans + `enableTimestamp` discriminator;
+   "Unavailable" is an auto-expiring 86.
+4. **Availability sync fix** — BUILT + VERIFIED live against Konjo (tri-state
+   classifier unit-locked 18/18; import-as-unavailable; both-direction
+   re-import sync; deactivation sweep; named transparency in responses).
+5. **DECISION: mock adapter is permanent** — per-capability migration
+   pattern; never a global switch, never a deletion.
+6. **Jon questionnaire prepared** (`jon-questionnaire.md`, 35 questions, ⭐
+   design-blockers marked) — run at the upcoming meeting; transcribe answers
+   back here.
+7. **PROCESSOR BLOCKER RESOLVED (Zach)** — open tabs (`openTab: true`, no
+   `payments[]`) reach the KDS on `scheduled` timing; Cash settlement is
+   permanently impossible under Client Credentials (access model).
+   Strengthens Branch A. Phase 2.2 is runnable NOW.
+
+Backlog additions today: admin UI auto-enters dashboard on expired JWT
+(cosmetic; catch 401 → bounce to login).
+
+### Standing next actions (in order)
+
+1. **Commit** the day's uncommitted set: prep-estimation spec + pointers,
+   availability probe + classifier + fix (+ admin HTML), mock-permanence
+   note, questionnaire + pointers, Zach-resolution sections, this index.
+2. **`scripts/probe-open-tab.ts`** — one scheduled open-tab order on Konjo,
+   poll to `prepared`: verifies open-tab schema, `scheduled` fire tolerance
+   (THE holdsSchedule fork), status latency, and the `orderByOrderUuid`
+   guess, in one run. Watch the dashboard KDS in parallel.
+3. **Seed 2 orderable items on Motor** (dashboard, ~5 min) → enables the
+   cross-vendor staggered shared-tab test (empirical Q2, the architecture's
+   load-bearing assumption).
+4. **Build `submitTicket`** against the verified schema + investigate
+   cancel/close-without-settlement (doubles as sandbox open-tab hygiene).
+5. **Jon meeting** with the questionnaire; answers transcribed back here.
+6. Prep-estimation build (lesser model) whenever chosen — starts at Phase A,
+   gates are not optional.
 
 
 
