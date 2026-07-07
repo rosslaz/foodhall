@@ -1,5 +1,65 @@
 # Roadmap — Food Hall Orchestrator
 
+## ⚡ WHERE WE ARE + RANKED NEXT STEPS (2026-07-07)
+
+*(This block supersedes the historical preamble below where counts or status
+disagree. Current verification gate: `npm run check` = typecheck + 23 unit +
+9 integration, all green. Phase detail + exit criteria below remain
+authoritative.)*
+
+**Position: Phase 2 is substantially complete, in the we-hold-timers mode
+chosen by measurement.** 2.1 (auth) done; 2.2's empirical questions answered
+or reframed (submission schema verified; stagger fidelity measured at 46ms
+on 300s end-to-end; status latency ~0.2s; "shared tab" superseded by
+location-scoped tabs → moved into 2.3); 2.4's core done (submitTicket +
+getTicketStatus live and conformance-verified; cancelTicket remains); 2.5
+partially standing (sweep + redrive exist and were exercised; 429/terminal-
+validation failure classes now handled at the client/adapter); 2.6 n/a so
+far (no webhooks offered — the 10s poll is primary, as designed); 2.7 seeded
+(`scripts/probe-adapter-submit.ts` is the conformance smoke to formalize);
+2.8 exists as the full prep-estimation spec. **The first end-to-end app run
+against real GoTab happened 2026-07-07** — the product's core mechanic is
+measured working; remaining risk is operational/business, not technical.
+
+**Next steps, ranked, with rationale:**
+
+1. **GoTab support thread (sent 2026-07-07; four questions).** Zone
+   order-interval config (→ the optional holdsSchedule flip), sandbox KDS (→
+   `prepared`, the telemetry pipeline's missing timestamp), shared-tab shape,
+   pay-before-fire sequencing. *Why first: it gates the 2.3 payment decision
+   and telemetry verification — but nothing in the core mechanic — so it
+   runs in the background by design.*
+2. **Jon meeting with `jon-questionnaire.md`.** *Why: the risk frontier moved
+   from "does the tech work" to kitchen reality — the ⭐ questions decide
+   scheduler config (max-vs-sum per vendor), whether prepared−sent telemetry
+   will exist per vendor (KDS/bump habits), whether availability sync can be
+   trusted (86-toggle usage), the pickup UX, and pilot design + thresholds.
+   Answers transcribe back into the project doc as decision inputs.*
+3. **Finding-#7 enforcement (prep spec Phase A: unconfirmed prep ⇒ not
+   orderable).** *Why: the last unguarded data-integrity hole — the 07-07
+   demo made it vivid (forgetting to set prep times silently destroys the
+   stagger). REQUIRED before seeding any real DSC menu; small, fully specced.*
+4. **`cancelTicket` / open-tab closure via API (finishes 2.4).** *Why: group
+   cancellation currently can't reach GoTab, and automated tab hygiene needs
+   it — but priority is moderate because the manual staff path ("Pay with
+   Tender Types") is verified and the sweep makes failures loud.*
+5. **2.3 payment-ownership decision — once 1 and 2 land.** *Why not now: the
+   evidence stack is still growing (consumer surface confirmed but OTP-gated;
+   one tab per vendor; pay-before-fire unresolved; staff-settle fallback
+   verified). Deciding early would mean building payment code on guesses —
+   the one category of guess this project has banned.*
+6. **Formalize 2.7 (`npm run test:gotab` from the conformance smoke).** *Why:
+   cheap now, and it becomes the regression net for every adapter change —
+   including the eventual holdsSchedule flip.*
+7. **Prep-estimation build (lesser-model implementer; spec is ready; phase
+   gates mandatory).** *Why anytime-but-unhurried: the machinery can be built
+   whenever, but it cannot learn anything true until a real kitchen feeds it
+   — its value compounds at the POC, not before.*
+8. **Phase 3 (deployment, monitoring, runbook) after Phase-2 exit; then the
+   POC; Fastify 5 post-POC as committed.**
+
+---
+
 This roadmap starts at Phase 2 (GoTab sandbox) and runs through production at
 DSC and the post-POC decision point. It assumes the current state of the
 codebase: MVP built; review fixes, must-have tier (reliability, liveness,

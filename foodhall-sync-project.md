@@ -1,5 +1,135 @@
 # Food Hall Order Synchronization — Project Context
 
+## ⚡ CURRENT STATE — read this first (updated 2026-07-07)
+
+**The product's core mechanic is built, integrated, and measured working
+against real GoTab.** On 2026-07-07 the app ran its first end-to-end group
+order through the real UI: two vendors, prep-staggered fire times held on our
+own durable timers, two real GoTab orders — and the kitchens experienced the
+300-second stagger with **46ms of error** (0.04% of the 120s sync window).
+Everything upstream of that number — group lifecycle, payment gating,
+scheduling math, firing, reconciliation, failure sweeps — is verified by
+`npm run check` (typecheck + 23 unit + 9 integration tests) and, where it
+touches GoTab, by live conformance probes.
+
+What exists and works: the full group-ordering web MVP (create/join by code,
+lock, pay, fire, ready board, admin); two hardening tiers (reliability
+sweeps, worker liveness, prediction-vs-actual telemetry, abuse limits;
+response allowlists, integration suite, audit-safe drops, estimator seam, DB
+invariants); GoTab OAuth + menu import with empirically-verified availability
+sync; and the real GoTab adapter — `submitTicket` live in we-hold-timers
+mode, status polling on proven queries, rate-limit pacing, idempotency.
+Designed-but-not-built on purpose: the prep-time estimation system (full
+implementation spec ready for a lesser-model build) and webhook ingestion.
+
+**Where the risk has moved:** the open questions are no longer "can this
+work" — they are operational and business questions. Four precise items ride
+the GoTab support thread (scheduling config, sandbox KDS, shared-tab shape,
+pay-before-fire sequencing); the operator unknowns (kitchen bump discipline,
+parallel-vs-sequential cooking, 86 habits, pickup UX, pilot design) are
+packaged as `jon-questionnaire.md` for the upcoming meeting. The remaining
+pre-POC engineering is finite and listed in the roadmap's ranked next steps.
+
+### Document map
+- **This file**: current state + decision register up top; below, an
+  APPEND-ONLY chronological evidence log (dated sections). Later entries
+  supersede earlier ones where they conflict; the original June context
+  sections immediately below this block are historical — the register and
+  the log are authoritative.
+- **`roadmap.md`**: phases 2–5 with exit criteria + ranked next steps.
+- **`prep-estimation-design.md`**: the estimation subsystem — design
+  rationale + implementer-grade spec (build gated, not blocked).
+- **`jon-questionnaire.md`**: the operator meeting instrument (⭐ =
+  design-blocking questions).
+
+## DECISION REGISTER — what we chose, why, and when to revisit
+
+1. **Monolith + worker; no microservices/K8s/event bus.** One venue peaks at
+   hundreds of concurrent users and there is no ops team; two processes with
+   platform restarts cover the failure modes that matter. *Revisit:* multiple
+   simultaneous high-volume venues (telemetry will announce it).
+2. **Vendor-adapter seam (`VendorAdapter`) isolating all GoTab specifics.**
+   Platform uncertainty was the project's dominant risk; the seam let the
+   holdsSchedule question ride a one-line flag instead of an architecture.
+   *Evidence:* the 2026-07-07 adapter build touched nothing outside the
+   adapter layer + two call-site lines. *Revisit:* never — this one paid for
+   itself.
+3. **`holdsSchedule = false` (we hold durable BullMQ timers; submit ASAP
+   orders at fire time).** Chosen by measurement, not preference: GoTab-held
+   scheduling is blocked on zone order-interval config (escalated to support
+   2026-07-07), while our mode measured 46ms stagger error — absolute
+   latency is common-mode and cancels; only inter-order jitter matters.
+   GoTab-held is now optional resilience, not a prerequisite. The flip seam
+   is live in `gotab.ts`, gated on the flag. *Revisit:* when support answers
+   the interval question — flip only if verified end-to-end AND it buys real
+   resilience.
+4. **The mock adapter is PERMANENT; capabilities migrate to real
+   individually.** The sandbox has no kitchen (nothing bumps `prepared`) and
+   no API settlement; the mock is the only place the full loop runs, and it
+   is the hermetic test double CI requires. Catalog reads already use real
+   GoTab whenever creds exist; firing uses real GoTab when
+   `VENDOR_ADAPTER=gotab`. *Revisit:* never delete; individual capabilities
+   migrate as the sandbox earns them.
+5. **Open tabs, no `payments[]`, settlement deferred.** Cash processors are
+   architecturally unreachable under Client Credentials (server-session
+   access model — support-confirmed, permanent); open tabs reach the KDS
+   without touching a processor. Staff can settle any tab in one click
+   ("Pay with Tender Types" → Cash — verified), so the worst-case
+   operational fallback at a venue is the food-hall status quo. *Revisit:*
+   at the 2.3 payment-ownership gate.
+6. **Payment ownership (roadmap 2.3) is OPEN, leaning Branch A (GoTab owns
+   payment).** Evidence so far: the consumer tab surface is real and
+   anonymous-reachable with native per-item payment (href test) — but it is
+   OTP-gated per diner, tabs are location-scoped (one tab PER VENDOR per
+   group, not one shared tab — original assumption superseded), and
+   pay-before-fire needs either GoTab-held scheduling or a
+   create-without-firing shape. Decision waits on the support thread + Jon's
+   Q20–21. *Revisit:* the gate itself; do not build payment code before it.
+7. **Honest prep times: store real values, never fabricate; `prepConfirmed`
+   gates trust.** A plausible-looking invented number is worse than an
+   honest zero — the scheduler's output is only as real as its inputs.
+   Finding-#7 enforcement (unconfirmed ⇒ not orderable) is specced as prep
+   Phase A and is REQUIRED before seeding any real menu. *Revisit:* n/a —
+   principle.
+8. **Availability: GoTab is the source of truth for GoTab-linked items.**
+   The dashboard tri-state was decoded empirically (lockstep booleans +
+   `enableTimestamp` discriminator; "Unavailable" is an auto-expiring 86);
+   re-import syncs both directions and deactivates vanished items; hand-added
+   items are never touched. *Revisit:* if Jon's Q13 says operators don't
+   actually use the 86 toggle, demote the sync to best-effort in the docs.
+9. **Prep estimation = per-item cook (robust stats, shrinkage) + live vendor
+   wait (queue depth ÷ bump rate), folded into item estimates so the S8 seam
+   holds; shadow mode before any flip; humans confirm orderability, data only
+   suggests.** Designed 2026-07-02, deliberately NOT built: it cannot learn
+   anything true until a real kitchen feeds it. *Revisit:* build any time
+   (spec is implementer-ready); calibrate only with DSC data.
+10. **Empiricism discipline: probe before build; record findings as dated
+    evidence; timing math on GoTab's clock only.** Every schema assumption
+    that was probed survived; every one taken from correspondence alone
+    needed correction. ~1s clock skew vs GoTab observed — never mix clocks.
+    *Revisit:* never.
+11. **Adapter law (all encoded in code + tests):** targeted lookups only
+    (bare `ordersList` times out server-side); ≤4rps GraphQL (client paces
+    at 280ms spacing, 429 retried once); mixed/tz-less-UTC timestamps
+    (Z-appending parser); tildes appear in location/order/tab/zone uuids
+    (encode REST paths); order creation is REST-only; create returns numeric
+    orderId only. *Revisit:* per-finding, with probes.
+12. **Failure posture: "a table silently not getting fed" is the kill-shot,
+    so every transition is a conditional update, every submission idempotent,
+    every primary mechanism backed by a sweep that logs at error level, and
+    telemetry is best-effort (never blocks food).** *Evidence:* the M1 dedupe
+    race and M4 expiry both observed working unprompted in the first
+    end-to-end run. *Revisit:* n/a — principle.
+13. **The HTML frontends are a disposable MVP; the real diner app is a
+    post-POC project.** Full-file rewrites only (line-edits corrupted them
+    twice); XSS-escape discipline everywhere. The schema-pinned API is the
+    future frontend's spec. *Revisit:* Phase 5.
+14. **Monetization: flat monthly fee per venue** (not per-order — aligns
+    incentives with the operator, trivial to reason about at POC scale).
+    *Revisit:* Jon Q34 sense-check, then post-POC.
+
+---
+
 ## Problem
 At a multi-vendor food hall, a group seated together orders from several different
 vendors. Because each vendor has different prep times, food arrives at different
@@ -84,6 +214,19 @@ the same window.**
 > outcome determines which adapter mode to write. Prerequisite for any test: a
 > `spotUuid` for Konjo and one for Motor (query `spotsList` via GraphQL — never fetched
 > yet; every tab needs one).
+
+> ✅ **RESOLVED 2026-07-06/07 — all three problems have verdicts; the adapter is
+> built.** (1) *Open tabs ARE supported via the API* — the doc's "closed only"
+> statement is stale/wrong for our integration: `openTab: true` with no
+> `payments[]` works (support-suggested, live-verified; it is the shipped
+> submit path). (2) *`scheduled` accepts full ISO timestamps* (schema-real,
+> top-level) BUT is coerced to ASAP absent zone order-interval config —
+> escalated to support; MOOT for the chosen mode, because (3) drove the
+> decision: *tabs ARE location-scoped* — confirmed — so the implementation is
+> one tab per vendor per group, we hold the timers (`holdsSchedule=false`),
+> and the measured end-to-end stagger fidelity is 46ms on 300s. The shared-
+> tab/payment-UX consequence moved into the 2.3 gate. Full evidence: the
+> dated log ("Open-tab probe session", "GoTab adapter BUILT", "THE NUMBER").
 
 ### Order timestamps & status — CONFIRMED, good coverage
 Per-order timestamps available via `ordersList`:
