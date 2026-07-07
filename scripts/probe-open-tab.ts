@@ -28,7 +28,7 @@ import { GoTabClient } from '../src/vendor-adapter/gotab-client.js';
 
 // ── Knobs ────────────────────────────────────────────────────────────────────
 const KONJO_LOC = 'ZQFbjpg06x4rf1w08RTuOhGa';
-const SPOT = 'spt_Fo3Not1quvTWJobPfptx7H_A';   // <-- REPLACE with scheduling-enabled spot
+const SPOT = 'spt_Xfg6nOcE0yL2EmwTDzpRmac6';   // Pickup Counter (Pickup zone, asapOnly:false)
 const PRODUCT_ITEM1 = 'prd_o1ypp85ndHldLmCbgjoQZIA2';
 const SCHEDULED_OFFSET_MIN = 3;
 const POLL_INTERVAL_MS = 12_000;               // well under the 4rps ceiling

@@ -1167,6 +1167,74 @@ questionnaire Q11–12: KDS-less vendors produce NO prepared data.
    status touch (label: `sandbox: first API order; open-tab probes +
    empirical findings`).
 
+---
+
+## Scheduling investigation — 2026-07-07 morning (EMPIRICAL AVENUES EXHAUSTED → Zach)
+
+**Bottom line: every API-created order is silently coerced to ASAP regardless
+of zone config. The mechanism is understood down to the zone flags; the
+missing config (order intervals) is not reachable from any surface we have.
+Escalated to Zach with full evidence. NOT BLOCKING: `holdsSchedule=false`
+(we hold BullMQ timers, submit ASAP orders at fire time) needs only what is
+NOW VERIFIED — submitTicket is buildable today; GoTab-held scheduling is the
+preferred optimization pending Zach.**
+
+### The zone mechanism (from probe-spots.ts, new script)
+- Zone scalar fields include the money trio: **`asapOnly`**,
+  **`asapOrderingEnabled`**, **`orderIntervalId`** — plus `openTabOnly`,
+  `kdsConfigs` (KDS routing is ZONE-level — lead for the prepared question),
+  `initialTabDiscoverableMs`, `zoneIframe`, etc. Spot has NO scheduling
+  fields — spots inherit their zone.
+- Konjo pre-provisioned: zone "Default" (asapOnly:false, asapOrderingEnabled:
+  false, no spots) and zone "E-Commerce" (**asapOnly:true**,
+  asapOrderingEnabled:true) holding our original probe spot — v1's coercion
+  fully mechanized.
+- The dashboard's Zone GROUPS (Dine-In/Takeout/Delivery/E-Commerce) are
+  containers; zone rows carry `type: null` in the sandbox.
+
+### New sandbox objects (created via dashboard, harvested via probe)
+- Zone **"Pickup"** under the Takeout group: zoneId **49184**, uuid
+  `zn_9C8ae6Ve2BYz55ky~ye9oW5~` (tildes in ZONE uuids too), asapOnly:false,
+  asapOrderingEnabled:true, lead time 0, time step minimum, KDS banner on.
+- Spot **"Pickup Counter"**: **`spt_Xfg6nOcE0yL2EmwTDzpRmac6`** (URL-clean).
+- Numeric **locationId for Konjo: 21091** (useful constant; goGet* functions
+  take _locationId BigInt + _timezone, LOCATION-scoped).
+
+### Second coerced order — zone flags are NOT sufficient
+Order **133487706** / `or_qWDHLWNr4f2iQ5UUJn6e8OhC` on the Pickup spot,
+requested scheduled=T+3min: came back **isAsap:true**, GoTab scheduled =
+placed (16:06:23), sent +230ms. NOT snapping (no lead-time/step rounding —
+timestamp is placed-time exactly). Tab `2bZT8Rkhy3LXX9E6zYri2j5~` (tildes in
+TAB uuids + hrefs too). Stranded-tab count: 2.
+
+### Ruled out this morning
+- Dashboard **Schedules page = availability HOURS grid** (location/zone/menu/
+  category open-hours; all green) — a different concept from order intervals;
+  nothing there to create for scheduling.
+- Zone form's Lead Time / Time Step / Max Advance Days did NOT materialize an
+  `orderIntervalId` (still null on all three zones). Interval config surface
+  NOT FOUND in the dashboard.
+- `goGetScheduleIntersectionSpans` (the windows readout): **"permission
+  denied for aggregate go_array_union"** under our Client Credentials role —
+  diagnostic inaccessible to our credential class.
+
+### Escalated to Zach (email drafted 2026-07-07)
+Questions: (1) what makes an API-created order schedulable — is a zone
+order-interval required and where is it configured; (2) does openTab:true /
+integration-created (E-Commerce channel) force ASAP; (3) is top-level ISO
+`scheduled` the right shape; (+) KDS display for the sandbox so `prepared`
+can be exercised. Evidence: both order ids, zone configs, the permission
+denial.
+
+### While waiting on Zach (all independently unblocked)
+1. **Build `submitTicket` in holdsSchedule=false mode** against the verified
+   ASAP open-tab path (adapter law from 2026-07-06 applies: targeted lookups,
+   4rps pacing, 429 retryable, tilde encoding, Z-appending timestamp parser,
+   string quantity). Flag-flip ready if Zach unblocks GoTab-held.
+2. Seed 2 orderable items on Motor (dashboard) → cross-vendor test prep.
+3. New probes committed with the rest: `probe-spots.ts`,
+   `probe-schedule-spans.ts`.
+
 
 
 
