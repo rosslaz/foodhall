@@ -348,7 +348,7 @@ you have NOT made a successful REST call yet, only GraphQL.
 - [x] Sandbox access provisioned (parent + 2 children; OAuth credentials issued) — 2026-06-25
 - [x] Confirm OAuth mechanics + make first authenticated call (Phase 2.1) — 2026-06-26 (token + GraphQL locationsList both verified)
 - [x] Build MVP scheduler (MVP + review fixes + must-have and should-have hardening tiers all verified — see dated sections below)
-- [ ] Run sandbox test plan (scheduling behavior, tab integrity, load calibration) — **UNBLOCKED 2026-07-02** via open tabs (see "PROCESSOR BLOCKER RESOLVED"); next action = open-tab probe, then Motor seeding, then submitTicket
+- [x] Run sandbox test plan — SUBSTANTIALLY DONE 2026-07-07 for we-hold-timers mode: submission schema verified, stagger fidelity measured (46ms error on 300s — see "THE NUMBER"), status latency ~0.2s. Remaining: GoTab-held scheduling (Zach), `prepared` (KDS ask), shared-tab/payment questions (2.3), load calibration (POC-era by design)
 - [ ] POC at DSC
 - [ ] Fastify 5 migration (clears npm audit criticals — see "Known issue" section; post-POC, pre-rollout)
 - [ ] Consider broader rollout (loop in GoTab partnerships)
@@ -1307,6 +1307,95 @@ run a real group order through the web UI — two real tabs firing on OUR
 staggered timers, reconcile advancing them. That is the Phase-2 integration
 moment. (READY requires the KDS bump — groups will park at FIRED until then;
 the demo still proves submit + stagger + reconcile.)
+
+---
+
+## FIRST END-TO-END RUN — THE NUMBER — 2026-07-07 ~17:15Z (Phase-2 integration moment)
+
+**The actual app, through the actual UI, staggered real orders onto both real
+GoTab kitchens with 46ms of error on a 300-second stagger. We-hold-timers
+mode is not a fallback — it measured essentially perfect.**
+
+### The run
+Group `b2033d0e` (2 diners, each ordering from both vendors — 2 items per
+vendor ticket). Prep: Motor 8min, Konjo 3min → intended offsets 0 / +300s,
+targetReadyAt 17:23:37.598Z.
+- Motor: ticket `ae32a821`, order **133492158**, tab `vnAcA_cbih_w_1kbOZvhPzw0`,
+  spot E-Commerce (sole candidate — chooser per design).
+- Konjo: ticket `90af70ab`, order **133492491**, tab `WB2lL2NCSg~NmBjpgNVIyYpN`,
+  spot Pickup Counter (asapOnly:false zone preferred — chooser per design).
+
+### THE NUMBER (GoTab's clock only, per the law)
+- intended stagger 300.000s → **actual sent-to-sent stagger 300.046s — error
+  0.046s** (0.04% of the 120s sync window).
+- Per-order create→sent pipeline: 0.22s / 0.21s. **Insight: absolute latency
+  is COMMON-MODE and cancels in the delta — synchronization fidelity depends
+  only on inter-order jitter, which measured 46ms.**
+- BullMQ delivered the +300s delayed job 134ms after target (our-side logs).
+- Caveats: n=1, idle sandbox, unloaded worker. Every future group accumulates
+  this measurement for free (our scheduledFor + GoTab sent are both durable).
+
+### Hardening observed working in the wild, first minute
+- Two `scheduleGroup` jobs for the same group (two payers, per-payment jobIds)
+  → conditional flip let exactly ONE through (the M1 dedupe-race design).
+- The M4 sweep expired a stale OPEN group unprompted.
+- Reconcile polls both FIRED tickets cleanly; group parks at FIRED as expected
+  (no KDS to bump — `prepared` pending the Zach ask).
+
+### STRATEGIC CONSEQUENCE — the holdsSchedule stakes just inverted
+We-hold-timers was the "safe fallback"; it measured near-perfect. GoTab-held
+scheduling (Zach's zone-interval answer) is now OPTIONALITY — a resilience
+nicety (platform keeps firing if our worker dies mid-window; the sweep +
+durable jobs already cover most of that) — NOT a prerequisite for anything.
+The fork that shaped the architecture since June is resolved in practice.
+
+### New architectural observation — record for the 2.3 payment gate
+Current implementation = **one tab per vendor per group** (tabs are
+location-scoped: `/api/loc/{loc}/tabs`). The original "ONE shared tab
+spanning vendors" assumption may not be expressible on this API path at all
+— diners would face N tabs, not one. Irrelevant to firing/timing; central to
+payment UX + settlement (Branch A). Possible answer: parent-location tabs
+with child-routed orders — unverified. Add to the Zach/sandbox queue for 2.3.
+
+### Still pending from this session's checklist
+- ~~`href` incognito test~~ **DONE 2026-07-07 — BRANCH A CONSUMER SURFACE
+  CONFIRMED.** Anonymous incognito browser (no login, no QR) opened tab
+  `SikOQWovqVuqx2Iq1fUGXBny` via its href and got GoTab's FULL consumer
+  payment UI: items, balance, and three payment modes — **Pay in Full / Pay
+  for Items / Pay an Amount**. "Pay for Items" = native per-item payment on a
+  tab — maps directly onto members-pay-their-own-items. Notes: total showed
+  $12.00 on $10.00 subtotal (almost certainly a default 20% tip pre-selected
+  — zone/location tip config; verify the selector); integration orders render
+  as "Ordered by Server" to consumers (cosmetic, diner-facing polish later).
+  **SEQUENCING CAVEAT (the sharpened 2.3 question):** this confirms the
+  consumer SURFACE, not the flow — we need payment BEFORE firing, but tab
+  creation currently IS firing (ASAP mode). Full Branch A needs GoTab-held
+  scheduling (+ new sub-question: does GoTab fire a scheduled order that is
+  UNPAID?) or a create-without-firing shape. Both ride the Zach thread.
+  **FOLLOW-UP finding (same day): consumer payment is OTP-GATED.** Clicking
+  "Place Order" opens a contact modal — first/last name, PHONE (required),
+  email optional, Cloudflare turnstile — then "Send code via SMS" (or
+  WhatsApp). GoTab's guest model ("guest is represented by phoneNumber")
+  live: every diner paying via GoTab's surface does a name+phone+OTP dance
+  before seeing payment methods. Real UX friction to weigh in the 2.3
+  payment-ownership decision — per-member OTP × possibly N vendor tabs.
+- ~~"Pay with Tender Types" settle~~ **DONE 2026-07-07 — STRANDED-TAB HYGIENE
+  SOLVED (manual).** Manager dashboard → Tabs → open tab card → Pay with
+  Tender Types → modal: "charge the remaining balance to the selected account
+  and close out the tab." Sandbox tenders offered: **Cash only** — completing
+  the settlement-asymmetry picture: Cash is unreachable by our Client-
+  Credentials API by design and one-click for staff. Verified: settling the
+  smoke tab ($10) closed it. Consequences: (a) probe/demo tabs cleanable at
+  leisure (mind the per-location + date filters — 07/06 probes on their own
+  date, Motor's tab under the Motor location); (b) 2.3 input — worst-case
+  operational fallback at DSC is staff settling at the counter = the food-
+  hall status quo; (c) `cancelTicket` investigation narrows to API-only
+  questions. Incidental: dashboard renders ASAP orders as "Scheduled for
+  {placed}" chips (cosmetic GoTab-ism); closed tabs gain a Refund button
+  (noted, unexplored). Optional extra experiment still open: proceed through
+  "Place Order" on the consumer page in incognito to see what payment methods
+  the sandbox offers (card auth likely unconfigured — the failure mode itself
+  is informative).
 
 
 

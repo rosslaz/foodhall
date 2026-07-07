@@ -13,8 +13,8 @@
 import { getGoTabAuth } from '../src/vendor-adapter/gotab-auth.js';
 import { GoTabClient } from '../src/vendor-adapter/gotab-client.js';
 
-const KONJO_LOC = 'ZQFbjpg06x4rf1w08RTuOhGa';
-const CURRENT_PROBE_SPOT = 'spt_Fo3Not1quvTWJobPfptx7H_A'; // the one that coerced to ASAP
+const KONJO_LOC = 'oSVMdw0wbSMqE~pOv7cUdkMd'; // <-- MOTOR for pre-demo spot check (tilde safe in GraphQL vars)
+const CURRENT_PROBE_SPOT = 'spt_Fo3Not1quvTWJobPfptx7H_A'; // Konjo marker; won't match Motor rows (harmless)
 
 const client = new GoTabClient(getGoTabAuth());
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
