@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { classifyGoTabProduct } from './gotab-availability.js';
+import { chooseSubmitSpot } from './gotab-spot.js';
 import { mapGoTabStatus } from './gotab-status.js';
 
 // Pure mapping tests — no network. Locks the GoTab-status -> VendorTicketStatus
@@ -87,5 +88,45 @@ describe('classifyGoTabProduct', () => {
     expect(
       classifyGoTabProduct({ productType: 'DEFAULT', orderEnabled: true, available: false, enableTimestamp: '2026-07-03T06:59:59.999' }),
     ).toBe('UNAVAILABLE');
+  });
+});
+
+// Spot selection for ticket submission (gotab-spot.ts). Fixture mirrors the
+// real Konjo sandbox topology observed 2026-07-07: an E-Commerce spot in an
+// asapOnly zone and a Pickup Counter spot in an asapOnly:false zone.
+describe('chooseSubmitSpot', () => {
+  const ecomZone = { zoneId: '48710', name: 'E-Commerce', asapOnly: true, hidden: false, available: true };
+  const pickupZone = { zoneId: '49184', name: 'Pickup', asapOnly: false, hidden: false, available: true };
+  const zones = [ecomZone, pickupZone];
+  const ecomSpot = { spotId: '254417', spotUuid: 'spt_ecom', name: 'E-Commerce', zoneId: '48710', hidden: false };
+  const pickupSpot = { spotId: '255214', spotUuid: 'spt_pickup', name: 'Pickup Counter', zoneId: '49184', hidden: false };
+
+  it('prefers a spot whose zone has asapOnly:false (Konjo topology)', () => {
+    expect(chooseSubmitSpot([ecomSpot, pickupSpot], zones)?.spotUuid).toBe('spt_pickup');
+  });
+
+  it('falls back to an asapOnly zone spot when nothing better exists', () => {
+    expect(chooseSubmitSpot([ecomSpot], zones)?.spotUuid).toBe('spt_ecom');
+  });
+
+  it('excludes hidden/archived spots and hidden/unavailable zones', () => {
+    const hiddenSpot = { ...pickupSpot, hidden: true };
+    expect(chooseSubmitSpot([hiddenSpot, ecomSpot], zones)?.spotUuid).toBe('spt_ecom');
+    const deadZone = [{ ...pickupZone, available: false }, ecomZone];
+    expect(chooseSubmitSpot([pickupSpot, ecomSpot], deadZone)?.spotUuid).toBe('spt_ecom');
+    expect(chooseSubmitSpot([{ ...ecomSpot, archived: true }], zones)).toBeNull();
+  });
+
+  it('keeps spots with unknown zones and tiebreaks by ascending spotId', () => {
+    const orphan = { spotId: '100', spotUuid: 'spt_orphan', name: 'Orphan', zoneId: '99999', hidden: false };
+    // Orphan zone unknown -> kept, ranked with the asapOnly-true tier; pickup
+    // (asapOnly:false tier) still wins.
+    expect(chooseSubmitSpot([orphan, pickupSpot], zones)?.spotUuid).toBe('spt_pickup');
+    // Within the same tier, lowest numeric spotId wins deterministically.
+    expect(chooseSubmitSpot([orphan, ecomSpot], zones)?.spotUuid).toBe('spt_orphan');
+  });
+
+  it('returns null when no spots exist', () => {
+    expect(chooseSubmitSpot([], zones)).toBeNull();
   });
 });

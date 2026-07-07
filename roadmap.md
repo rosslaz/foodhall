@@ -118,7 +118,16 @@ replaces or interacts with our payment-timeout flow)?
 
 ### 2.4 Build: the real adapter
 
-**PARTIALLY BUILT (2026-06-27) — auth + read path done; `submitTicket` blocked.**
+**CORE DONE 2026-07-07 — `submitTicket` LIVE (open-tab, we-hold-timers mode)
++ `getTicketStatus` rewritten onto verified lookups; conformance-verified
+against live Konjo** (`scripts/probe-adapter-submit.ts` — the seed of 2.7's
+`test:gotab`; spot discovery, idempotency, both status paths all pass; gates
+green: typecheck, 23 unit, 9 int). Client hardened per adapter law (280ms
+process-wide pacing ≈ 3.5rps, 429 retry-once). Item mapping compile-enforced
+(`TicketItem.gotabProductUuid` required). Spot = runtime discovery via the
+pure, unit-tested chooser (`gotab-spot.ts`); per-vendor override column is
+the production follow-up. Full detail: project doc "GoTab adapter BUILT".
+Earlier status for history:
 The scaffold no longer says `holdsSchedule = true`; it now defaults to **`false`**
 (safe default — see the ⚠️ fork note in the project doc and in `gotab.ts`). What
 exists now, typecheck-clean and unit-tested (12 unit tests green incl. 7 for the
@@ -138,16 +147,21 @@ status mapping):
   GoTab's `userByUserId` naming pattern — it typechecks but is unverified against the
   live schema (can't query a real order until one can be created; see blocker).
 
-Still to build (BLOCKED on the make-or-break test / holdsSchedule fork):
+Remaining in 2.4 (the core is done):
 
-- `submitTicket`: **stubbed on purpose.** Its shape depends on the fork — submit a
-  scheduled order to GoTab (`holdsSchedule=true`) vs fire at our own timer
-  (`false`) — AND on a tab-creation path our integration can actually settle
-  (currently `PROCESSOR_INVALID`: Cash is POS-only/server-assigned). Do NOT
-  implement until GoTab support answers whether an order can be created without a
-  settling payment.
-- `getTicketStatus`: verify the real query field name + `ordersList` timestamp
-  fields against the live schema once an order exists to read.
+- `cancelTicket` + open-tab closure investigation — what is cancellable after
+  SENT, and how integration-created open tabs get closed without settlement
+  (also answers stranded-probe-tab hygiene; "Pay with Tender Types" settle
+  untested). Still 501 on purpose — failing loudly beats pretending a kitchen
+  stopped.
+- The **holdsSchedule flip**: the `scheduled` seam is live in the submit body,
+  gated on the flag — flips the moment Zach's answer makes GoTab-held
+  scheduling real (zone order-interval escalation, 2026-07-07).
+- `getTicketStatus` field-name caveat: RESOLVED — external ids are numeric
+  orderIds; lookups are `ordersList(condition:{orderId})` (ctx path, proven)
+  with top-level `order(orderId)` fallback (live-verified 2026-07-07). The
+  old `orderByOrderUuid` guess also exists on the schema but is no longer
+  used.
 - `cancelTicket`: stubbed; document what's cancellable after `scheduled` is set.
 - Map menu items: our catalog ↔ GoTab product ids (**DONE for the import
   direction** — see 2.4a below; a `gotabProductUuid` now exists on MenuItem).

@@ -1235,6 +1235,79 @@ denial.
 3. New probes committed with the rest: `probe-spots.ts`,
    `probe-schedule-spans.ts`.
 
+---
+
+## GoTab adapter BUILT + conformance-verified — 2026-07-07 afternoon (Phase 2.4 core)
+
+**`submitTicket` is LIVE in we-hold-timers mode (`holdsSchedule=false`),
+verified against real Konjo. The app can now fire real GoTab orders on our
+BullMQ timers. All gates green: typecheck, 23 unit, 9 integration.**
+
+### What was built
+- **`gotab.ts` submitTicket**: open-tab create (openTab:true, no payments[]),
+  ticketId-keyed in-memory idempotency, tab `externalId` = ticketId
+  (provenance/webhook key), tab name `FoodHall {id8}`, item notes folded into
+  the documented order-level `notes` string (per-item notes object shape
+  unverified — don't guess), items via nested `product.productUuid`, and the
+  dormant **`scheduled` flip seam** gated on `holdsSchedule` — flipping the
+  flag activates GoTab-held mode with zero other changes once Zach unblocks.
+- **`getTicketStatus(externalId, ctx?)`**: external id = GoTab's NUMERIC
+  orderId (all the create response gives). ctx carries vendorLocationId → the
+  proven `ordersList(condition:{orderId})` lookup; no ctx → top-level
+  `order(orderId)` fallback — **now live-verified too (no permission wall);
+  zero unverified queries remain in the adapter.** Numeric-id validation
+  before inlining.
+- **`gotab-client.ts` hardening (adapter law encoded)**: process-wide pacing
+  gate, 280ms between request STARTS (≈3.5rps, shared across ALL client
+  instances — module-level, synchronous slot reservation), and 429 → one
+  1.2s-backoff retry alongside the existing 401 logic.
+- **Contract changes (`types.ts`)**: `TicketItem.gotabProductUuid: string |
+  null` REQUIRED — compiler forces builders to supply it; GoTab adapter
+  rejects unmapped items terminally (GOTAB_UNMAPPED_ITEMS, operator config
+  error) while the mock accepts. `TicketStatusContext` optional param — mock
+  unchanged (TS accepts fewer params).
+- **Spot strategy**: no migration — runtime discovery per location
+  (spotsList+zonesList once, cached process-lifetime), pure chooser in
+  **`gotab-spot.ts`** (5 unit tests on the real Konjo topology): exclude
+  hidden/archived spots + hidden/unavailable zones, prefer zones with
+  `asapOnly:false` (future-proofs the flip), ascending-spotId tiebreak.
+  Production follow-up: per-vendor override column.
+- Exported `parseGoTabTimestamp` (Z-appending) from gotab.ts for reuse.
+- Call-site wiring: `orders.service` passes `menuItem.gotabProductUuid`;
+  reconcile includes vendor and passes ctx.
+
+### Conformance smoke (scripts/probe-adapter-submit.ts — seed of 2.7 test:gotab)
+Run 2026-07-07 16:46Z vs live Konjo: spot discovery chose **Pickup Counter**
+exactly as the unit fixture predicted; order **133490055** created (tab
+`frVu49J5_a5GixWxZpQS9OWu`); **idempotency PASS** (second submit, same id, no
+second tab); status via ctx path AND fallback both functional.
+
+### Finding: the status "mismatch" was a sampling race — PROVEN, not a bug
+Smoke read SCHEDULED (ctx path) then IN_PROGRESS (fallback) seconds apart.
+GoTab's own timestamps prove the pipeline: created 09.232 → placed 09.360 →
+sent 09.425 (~200ms) — the first query sampled pre-SENT, the second post.
+Reconcile is immune by design (SCHEDULED → continue → next 10s tick).
+Also observed: **~1s clock skew** between local machine and GoTab servers —
+LAW: tolerance/timing math compares GoTab timestamps to GoTab timestamps
+ONLY; never mix clocks. (probe-order-poll's verdict now guards on isAsap and
+says exactly this.)
+
+### Known limits (accepted, recorded)
+- Restart in the accept→DB-write window can double-submit one ticket (sweep
+  redrive); tab externalId makes duplicates identifiable. Platform-side
+  externalId dedupe unverified.
+- `cancelTicket` remains 501 — cancellation semantics + open-tab closure =
+  the standing 2.4 investigation (3 stranded probe tabs now; "Pay with
+  Tender Types" settle still untested).
+- `prepared` unobservable until a sandbox KDS exists (Zach ask pending).
+
+### Next milestone (unblocked NOW): first END-TO-END app run vs real GoTab
+Set `VENDOR_ADAPTER=gotab`, import Konjo + Motor as vendors (Motor is seeded),
+run a real group order through the web UI — two real tabs firing on OUR
+staggered timers, reconcile advancing them. That is the Phase-2 integration
+moment. (READY requires the KDS bump — groups will park at FIRED until then;
+the demo still proves submit + stagger + reconcile.)
+
 
 
 

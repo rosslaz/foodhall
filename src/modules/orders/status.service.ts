@@ -110,10 +110,15 @@ export async function reconcileSubmittedTickets() {
   // both modes.
   const tickets = await prisma.ticket.findMany({
     where: { gotabOrderId: { not: null }, status: { in: ['PENDING', 'FIRED'] } },
+    include: { vendor: { select: { gotabLocationId: true } } },
   });
   for (const ticket of tickets) {
     try {
-      const status = await adapter.getTicketStatus(ticket.gotabOrderId!);
+      // Vendor location lets the GoTab adapter use the proven fast lookup
+      // (targeted ordersList — adapter law); the mock ignores it.
+      const status = await adapter.getTicketStatus(ticket.gotabOrderId!, {
+        vendorLocationId: ticket.vendor.gotabLocationId ?? undefined,
+      });
       if (status === 'SCHEDULED') continue; // platform still holding it
       if (status === 'IN_PROGRESS') {
         if (ticket.status === 'PENDING') {

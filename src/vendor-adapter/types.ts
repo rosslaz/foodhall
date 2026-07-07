@@ -14,6 +14,13 @@ export interface TicketItem {
   qty: number;
   notes?: string;
   priceCents: number;
+  // GoTab product mapping (MenuItem.gotabProductUuid). REQUIRED (nullable) so
+  // the compiler forces request builders to supply it: the GoTab adapter
+  // cannot submit an item without it (createTab items reference
+  // product.productUuid). null = hand-added item with no platform mapping —
+  // the mock accepts these; the GoTab adapter rejects the ticket loudly
+  // (operator config error, terminal, not retryable).
+  gotabProductUuid: string | null;
 }
 
 export interface SubmitTicketRequest {
@@ -61,6 +68,15 @@ export interface VendorCatalog {
   products: VendorProduct[];
 }
 
+// Optional lookup context for status polls. The GoTab adapter uses the
+// vendor's location to run the PROVEN fast lookup (location-scoped
+// ordersList(condition:{orderId}) — see project doc "adapter LAW", 2026-07-06:
+// bare ordersList times out server-side; lookups must be targeted). Without
+// it, the adapter falls back to the top-level order(orderId) query.
+export interface TicketStatusContext {
+  vendorLocationId?: string;
+}
+
 export interface VendorAdapter {
   readonly name: string;
   // True: the platform holds scheduled orders and fires them itself; we submit
@@ -69,8 +85,9 @@ export interface VendorAdapter {
   readonly holdsSchedule: boolean;
   // Send a ticket to the vendor's POS. Must be idempotent on ticketId.
   submitTicket(req: SubmitTicketRequest): Promise<SubmitTicketResult>;
-  // Poll current status of a previously submitted ticket.
-  getTicketStatus(externalOrderId: string): Promise<VendorTicketStatus>;
+  // Poll current status of a previously submitted ticket. ctx is optional and
+  // advisory — implementations that don't need it (mock) simply ignore it.
+  getTicketStatus(externalOrderId: string, ctx?: TicketStatusContext): Promise<VendorTicketStatus>;
   // Cancel a ticket if still cancellable.
   cancelTicket(externalOrderId: string): Promise<void>;
   // Read a location's name + orderable products, for menu onboarding/import.

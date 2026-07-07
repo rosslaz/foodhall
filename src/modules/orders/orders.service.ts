@@ -296,6 +296,9 @@ async function submitTicketToVendor(ticketId: string, opts: { markFired: boolean
       qty: oi.qty,
       notes: oi.notes ?? undefined,
       priceCents: oi.priceCentsSnapshot,
+      // GoTab product mapping — required by the adapter contract; null for
+      // hand-added items (mock accepts; GoTab adapter rejects loudly).
+      gotabProductUuid: oi.menuItem.gotabProductUuid ?? null,
     })),
   });
 

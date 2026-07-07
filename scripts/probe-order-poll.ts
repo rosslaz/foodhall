@@ -23,8 +23,8 @@ import { GoTabClient } from '../src/vendor-adapter/gotab-client.js';
 
 // ── Knobs (defaults = the 2026-07-07 02:23Z probe run) ─────────────────────
 const KONJO_LOC = 'ZQFbjpg06x4rf1w08RTuOhGa';
-const TARGET_ORDER_ID = '133476673';
-const OUR_SCHEDULED_ISO = '2026-07-07T02:26:09.427Z'; // what we sent
+const TARGET_ORDER_ID = '133490055'; // adapter smoke order, 2026-07-07 16:46Z
+const OUR_SCHEDULED_ISO = '2026-07-07T16:46:07.844Z'; // acceptedAt (ASAP — no schedule requested)
 const POLL_INTERVAL_MS = 15_000;
 const MAX_POLLS = 12;
 // ────────────────────────────────────────────────────────────────────────────
@@ -170,22 +170,30 @@ async function main() {
     const sent = parseGoTabTs(snap.sent as string);
     const created = parseGoTabTs(snap.created as string) ?? parseGoTabTs(snap.placed as string);
     if (sent) {
-      console.log('\n─── Q1 ANSWER ───');
-      console.log(`our scheduledFor:  ${OUR_SCHEDULED_ISO}`);
-      console.log(`scheduled (GoTab): ${snap.scheduled ?? '(null — field not set by our create!)'}`);
-      console.log(`sent:              ${snap.sent}`);
-      console.log(`isAsap:            ${snap.isAsap}`);
-      console.log(`sent − scheduled = ${fmtDelta(sent.getTime() - sched.getTime())}`);
-      if (created) console.log(`sent − created   = ${fmtDelta(sent.getTime() - created.getTime())}`);
-      const vsCreation = created ? Math.abs(sent.getTime() - created.getTime()) : Infinity;
-      const vsSchedule = Math.abs(sent.getTime() - sched.getTime());
-      if (vsSchedule < 60_000 && vsSchedule < vsCreation) {
-        console.log('=> GoTab HELD the order and fired near the timestamp — holdsSchedule VIABLE.');
-      } else if (vsCreation < 60_000) {
-        console.log('=> Fired at CREATION — our `scheduled` was ignored on this route (check whether GoTab.scheduled is null and isAsap is true; if so the field name/placement in the create body is wrong, not the capability).');
-      } else {
-        console.log('=> Fired at neither creation nor schedule — inspect raw values above.');
-      }
+    console.log('\n─── Q1 ANSWER ───');
+    console.log(`our scheduledFor:  ${OUR_SCHEDULED_ISO}`);
+    console.log(`scheduled (GoTab): ${snap.scheduled ?? '(null — field not set by our create!)'}`);
+    console.log(`sent:              ${snap.sent}`);
+    console.log(`isAsap:            ${snap.isAsap}`);
+    console.log(`sent − scheduled = ${fmtDelta(sent.getTime() - sched.getTime())}`);
+    if (created) console.log(`sent − created   = ${fmtDelta(sent.getTime() - created.getTime())}`);
+    // VERDICT GUARD (2026-07-07): on an ASAP order GoTab sets
+    // scheduled=placed itself, making sent−scheduled trivially tiny — that
+    // is NOT evidence of held scheduling. Only isAsap:false + an echoed
+    // future timestamp counts.
+    if (snap.isAsap === true) {
+    console.log('=> isAsap:true — ASAP order (no schedule requested, or schedule did not take).');
+      console.log('   Held-scheduling verdict: N/A on this order. Compare GoTab timestamps only');
+    console.log('   (local clock skew vs GoTab observed ~1s — never mix clocks).');
+    } else {
+          const vsCreation = created ? Math.abs(sent.getTime() - created.getTime()) : Infinity;
+          const vsSchedule = Math.abs(sent.getTime() - sched.getTime());
+          if (vsSchedule < 60_000 && vsCreation > 60_000) {
+            console.log('=> isAsap:false and fired near the echoed timestamp — GoTab HELD the order. holdsSchedule VIABLE.');
+          } else {
+            console.log('=> isAsap:false but firing pattern unclear — inspect raw values above.');
+          }
+        }
       if (snap.prepared) {
         console.log(`prepared: ${snap.prepared} — full lifecycle observed. Done.`);
         return;
