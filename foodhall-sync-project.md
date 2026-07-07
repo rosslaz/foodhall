@@ -889,6 +889,13 @@ Unit suite 18/18; typecheck clean. Also noted during testing: the admin UI
 auto-enters the dashboard on a stored-but-expired JWT (12h TTL) and only
 surfaces "Invalid or missing token" on the first privileged call — cosmetic
 backlog item: catch 401s in the admin `api()` helper and bounce to login.
+**FIXED 2026-07-07** (after biting two sessions running): two layers —
+load-time client-side JWT `exp` check (expired/malformed stored token →
+login card immediately, never a fake dashboard) + `api()` bounces on any 401
+that had a token attached (clears token, stops the activity poll, shows
+"Session expired — sign in again"). The bounce deliberately gates on
+a-token-was-attached so the login route's own 401 (wrong password) still
+shows the real error. Full-file rewrite per the frontend law.
 
 ---
 

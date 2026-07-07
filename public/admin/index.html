@@ -79,6 +79,7 @@
 <script>
 const API='/api';
 let token=localStorage.getItem('admin_token');
+let activityTimer=null;
 let hallId=null;
 
 // XSS guard (review finding #2): every dynamic string interpolated into
@@ -91,11 +92,41 @@ function esc(s){
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// SESSION EXPIRY (backlog fix, 2026-07-07): admin JWTs live 12h, and this
+// page used to auto-enter the dashboard on a stored-but-dead token — the
+// failure only surfaced as a confusing "Invalid or missing token" on the
+// first privileged call (bit us two sessions running). Two layers now:
+//   1. jwtExpired(): decode the token's exp CLIENT-SIDE at page load; an
+//      expired/malformed token never enters the dashboard at all.
+//   2. api(): any 401 while a token is attached bounces to the login card
+//      (covers revocation / server secret rotation mid-session).
+// The bounce only fires when a token was actually attached — the login route
+// itself 401s on wrong credentials, and that must show the real error.
+function jwtExpired(t){
+  try{
+    const payload=JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+    return typeof payload.exp==='number' && payload.exp*1000 <= Date.now();
+  }catch(e){ return true; } // unparseable token = treat as expired
+}
+
+function bounceToLogin(message){
+  token=null; localStorage.removeItem('admin_token');
+  if(activityTimer){ clearInterval(activityTimer); activityTimer=null; }
+  document.getElementById('dash').classList.add('hidden');
+  document.getElementById('login').classList.remove('hidden');
+  msg(message);
+}
+
 function authHeaders(){ return token?{'Authorization':'Bearer '+token}:{}; }
 async function api(path,opts={}){
+  const hadToken=!!token;
   // Header only when a body exists — Fastify rejects empty JSON bodies.
   const headers={...(opts.body!==undefined?{'Content-Type':'application/json'}:{}),...authHeaders(),...(opts.headers||{})};
   const res=await fetch(API+path,{...opts,headers});
+  if(res.status===401 && hadToken){
+    bounceToLogin('Session expired — sign in again.');
+    throw new Error('Session expired — sign in again.');
+  }
   if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.message||e.error||'Error'); }
   return res.status===204?null:res.json();
 }
@@ -118,7 +149,9 @@ async function enterDash(){
   document.getElementById('dash').classList.remove('hidden');
   const hall=await api('/halls/default');
   hallId=hall.id; document.getElementById('hallName').textContent=hall.name;
-  loadVendors(); loadActivity(); setInterval(loadActivity,10000);
+  loadVendors(); loadActivity();
+  if(activityTimer) clearInterval(activityTimer);
+  activityTimer=setInterval(loadActivity,10000);
 }
 
 async function loadVendors(){
@@ -226,7 +259,10 @@ async function loadActivity(){
     (g.targetReadyAt?new Date(g.targetReadyAt).toLocaleTimeString():'—')+'</td></tr>').join('')+'</table>';
 }
 
-if(token) enterDash();
+if(token){
+  if(jwtExpired(token)) bounceToLogin('Session expired — sign in again.');
+  else enterDash();
+}
 </script>
 </body>
 </html>
