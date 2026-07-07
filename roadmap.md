@@ -29,6 +29,14 @@ now, 2.4 `submitTicket` builds against the open-tab flow, and the
 holdsSchedule fork resolves empirically. Probe the open-tab schema first
 (field names unverified) — same discipline as the availability mapping.
 Full detail in the project doc ("PROCESSOR BLOCKER RESOLVED").
+**PROBED 2026-07-06 (FIRST API order ever created — pipeline verified to
+SENT):** create schema verified; `scheduled` IS the right top-level field but
+THE SPOT GATES SCHEDULING (dine-in spot silently coerces to ASAP, per GoTab
+docs). Fix = dashboard spot config, then re-run probe v2 for the fire-
+tolerance verdict. Adapter law learned: targeted lookups only (bare ordersList
+times out server-side), 4rps GraphQL limit (429), mixed / tz-less-UTC
+timestamps, tildes in order uuids. Full findings + morning pickup list in the
+project doc ("Open-tab probe session — 2026-07-06").
 
 ### 2.1 Environment & auth — DONE (2026-06-26)
 

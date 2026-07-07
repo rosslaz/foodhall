@@ -1041,6 +1041,132 @@ Backlog additions today: admin UI auto-enters dashboard on expired JWT
 6. Prep-estimation build (lesser model) whenever chosen — starts at Phase A,
    gates are not optional.
 
+---
+
+## Open-tab probe session — 2026-07-06 evening (EMPIRICAL FINDINGS)
+
+**Headline: the FIRST API-created order in project history. Full pipeline
+verified to SENT. `scheduled` did not take — root cause found in GoTab docs:
+THE SPOT GATES SCHEDULING. One dashboard toggle away from the holdsSchedule
+answer.**
+
+### Bug found first: stale REST base in `.env`
+`GOTAB_API_BASE` in `.env` still held the early-days guess
+`https://api-sandbox.gotab.io` (nonexistent host — DNS-level "fetch failed").
+Fixed to `https://gotab.io`. The sandbox is LOCATIONS on the production host,
+not a separate host. This was the first call ever to exercise the client's
+REST path (`locPost`); OAuth/GraphQL have their own URL vars, long verified.
+
+### Create verified (Q3, submission side)
+`POST /api/loc/{loc}/tabs` with body `{ openTab: true, spotUuid, name,
+scheduled (top-level ISO), items: [{ product: { productUuid }, quantity }] }`
+— items use the NESTED product shape (per GoTab's reservation docs, recovered
+from the 06-27 transcript). Succeeded in 674ms. Response shape (live-verified):
+- Wrapped in `data`. Tab: `tabId` (numeric string) + `tabUuid`, `tabMode:
+  "DEFAULT"`, `status: "OPEN"`, totals in CENTS (re-confirmed), `payments: []`,
+  `balanceDue`.
+- `orders: [{ orderId }]` — numeric orderId ONLY; **no orderUuid in the create
+  response** (it exists on the Order type; fetch it via lookup).
+- items[]: `quantity` comes back as a STRING (adapter typing note).
+- **`href`: consumer-facing tab URL** (`https://gotab.io/.{tabUuid}`) — Branch-A
+  lead: if a diner can open + pay that link via GoTab's consumer flow, that IS
+  the production payment shape. NOT YET TESTED — morning item.
+- Dashboard: tab shows "assigned to Food Hall Sync - DSC" (integration
+  provenance + Reassign), channel "E-Commerce", and a **"Pay with Tender
+  Types"** button = probable staff-side manual settlement / probe-tab cleanup
+  path (untested).
+
+### v1 result: order fired IMMEDIATELY — `scheduled` silently coerced to ASAP
+Order `133476673` / orderUuid `or_4C8FRY2vRhfDiG4424rCC~_~` (**tildes appear
+in ORDER uuids too** — path-encoding hazard; safe in GraphQL variables):
+`created 02:23:11.415`, `placed 02:23:11.556+00:00`, GoTab `scheduled` =
+placed (DEFAULTED — not our 02:26 request), `sent 02:23:11.621` (~200ms after
+create), **`isAsap: true`**, status stuck at SENT (no KDS to bump; see below).
+NOTE: the probe's first printed verdict ("GoTab HELD — holdsSchedule viable")
+was WRONG — a verdict-ordering bug (sent−scheduled was tiny because GoTab set
+scheduled=placed itself). Corrected in probe v2: **the success test is
+`isAsap: false` AND GoTab's `scheduled` echoing ours**; only then does
+sent−scheduled measure fire tolerance.
+Curiosity: `orderPrepTimeMs: 600000` (10 min) attached despite the product
+having no prep configured — source unknown (location default?);
+estimation-relevant, investigate later.
+
+### ROOT CAUSE (from docs.gotab.io/docs/create-a-new-tab)
+`scheduled` IS the documented top-level createTab field ("By default scheduled
+is set to ASAP"), and: **"If the spot allows scheduling, which is typical of
+takeout and delivery orders, then the order can be scheduled... Otherwise the
+delivery time will be set to ASAP."** Konjo's dine-in spot
+(`spt_Fo3Not1quvTWJobPfptx7H_A`) does not allow scheduling → silent ASAP
+coercion, exactly as documented. **Fix is dashboard spot/zone config, not
+code.** Related: scheduled times likely must fall within the location's
+ordering SCHEDULE windows (docs: "allowing orders to be placed within the
+available schedules"; the `goGetScheduleIntersectionSpans` mutation is that
+machinery).
+
+### Adapter LAW learned tonight (bake into gotab.ts when building submitTicket)
+1. **Targeted lookups only.** Bare `location { ordersList }` = server-side
+   statement TIMEOUT. Proven fast: `ordersList(condition: { orderId })`.
+   Query root also has `order(orderId: BigInt)`, `orderByOrderUuid(orderUuid:
+   String)` — the gotab.ts guess EXISTS on the schema (not yet exercised with
+   a real uuid — morning item), `orderById(id: ID)`.
+2. **GraphQL rate limit: 4 rps** (429: "exceeded the threshold of 4rps").
+   Pollers must pace; treat 429 as retryable-with-backoff (client currently
+   treats non-401 as terminal — future client tweak).
+3. **Mixed timestamp formats WITHIN one row**: placed/scheduled carry +00:00;
+   created/sent/statusChanged are tz-less **UTC** (verified: 22:23 EDT
+   creation == 02:23 tz-less). Parser must append Z to tz-less strings (JS
+   parses tz-less as LOCAL — 4h error otherwise). Retroactively decodes the
+   availability probe's enableTimestamp: auto-86 expiry ≈ 3am EDT = end of
+   service day, UTC.
+4. **Order type (38 fields, introspected):** all support-claimed timestamps
+   exist (placed/scheduled/sent/prepared/fulfilled/statusChanged) plus
+   `dispatched`, `recalled`, **`isAsap`**, `orderIntervalTypeId`,
+   `orderPrepTimeMs`, `orderUuid`, `apiUserUserId`, `orderSequenceNumber`,
+   `serverName`, `riskFlag`.
+5. **Order creation is REST-only.** Mutation root has 16 fields, all read-ish
+   `goGet*` helpers — no createTab/addTabItems in GraphQL; REST bodies are not
+   introspectable (that avenue is a confirmed dead end).
+
+### KDS / `prepared` — blocked in sandbox, path known
+Bumping `prepared` requires a PROVISIONED KDS Display: Manager Dashboard →
+Displays → "+ New Display System" → KDS type → activation code (GoTops app;
+success.gotab.io/knowledge/setting-up-kds). The sandbox has NONE → nowhere to
+bump → orders park at SENT. GoTab's terminology doc says the KDS (and POS) are
+**web-based** — a browser bump may be possible once a display is provisioned.
+→ Zach question queued: "provision/enable a KDS display for Konjo Me Sandbox
+(or a web way to bump `prepared`)." This sandbox gap is a miniature of
+questionnaire Q11–12: KDS-less vendors produce NO prepared data.
+
+### Probe scripts (all in scripts/, all committed-when-you-commit)
+- `probe-open-tab.ts` **v2** — spot-aware retry; verdict bug fixed (isAsap +
+  scheduled-echo checked FIRST); 4rps-safe polling; SPOT is the knob to edit.
+- `probe-order-poll.ts` v2 — targeted-lookup chain; Order-type introspection.
+- `probe-schedule-field.ts` — Mutation-root introspection (read-only).
+- Stranded sandbox tab from v1: `SikOQWovqVuqx2Iq1fUGXBny` ($10 open, order
+  stuck SENT). Cleanup candidate: "Pay with Tender Types" (untested).
+
+### MORNING PICKUP — in order
+1. Dashboard: enable scheduling on a Konjo spot OR create a takeout/pickup
+   spot (copy its spt_ uuid); check the location's ordering-schedule windows
+   cover "now + a few minutes". ~10 min cap → else one-line Zach ask.
+2. Set the `SPOT` knob in `scripts/probe-open-tab.ts` if new spot; run
+   `npx tsx --env-file=.env scripts/probe-open-tab.ts`. Success = isAsap:false
+   + echo; then sent−scheduled = **Q1 fire tolerance = the holdsSchedule
+   verdict.**
+3. Open the v1 tab `href` in a browser — does it render a payable consumer
+   tab? (Branch-A payment shape, zero cost.)
+4. Click "Pay with Tender Types" on the stranded tab — cleanup semantics
+   data point.
+5. Verify `orderByOrderUuid` with the real uuid (fold into next probe run).
+6. Zach email (one message): KDS display for sandbox; (settlement circle-back
+   stays deferred).
+7. Then the standing queue: Motor seeding → cross-vendor stagger (Q2);
+   `submitTicket` build against the now-verified schema (pacing, 429 retry,
+   targeted lookups, tilde encoding, Z-appending parser, string quantity).
+8. **Commit** tonight's set: three probe scripts + this section + roadmap
+   status touch (label: `sandbox: first API order; open-tab probes +
+   empirical findings`).
+
 
 
 
