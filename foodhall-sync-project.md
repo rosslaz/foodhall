@@ -55,14 +55,15 @@ pre-POC engineering is finite and listed in the roadmap's ranked next steps.
    adapter layer + two call-site lines. *Revisit:* never — this one paid for
    itself.
 3. **`holdsSchedule = false` (we hold durable BullMQ timers; submit ASAP
-   orders at fire time).** Chosen by measurement, not preference: GoTab-held
-   scheduling is blocked on zone order-interval config (escalated to support
-   2026-07-07), while our mode measured 46ms stagger error — absolute
-   latency is common-mode and cancels; only inter-order jitter matters.
-   GoTab-held is now optional resilience, not a prerequisite. The flip seam
-   is live in `gotab.ts`, gated on the flag. *Revisit:* when support answers
-   the interval question — flip only if verified end-to-end AND it buys real
-   resilience.
+   orders at fire time) — now PERMANENT, not provisional.** Originally chosen
+   by measurement (46ms stagger error end-to-end; absolute latency is
+   common-mode and cancels — only inter-order jitter matters). Then made
+   structural by GoTab (2026-07-08): open tabs and scheduled orders are
+   mutually exclusive in their code, and scheduled⇒closed⇒settlement⇒
+   processor is unreachable under Client Credentials. GoTab-held scheduling
+   is EXCLUDED for this integration, not merely unconfigured. The code seam
+   in `gotab.ts` remains as documentation of the exclusion. *Revisit:* only
+   if GoTab ships scheduled-open-tabs or our access model changes.
 4. **The mock adapter is PERMANENT; capabilities migrate to real
    individually.** The sandbox has no kitchen (nothing bumps `prepared`) and
    no API settlement; the mock is the only place the full loop runs, and it
@@ -1546,6 +1547,121 @@ with child-routed orders — unverified. Add to the Zach/sandbox queue for 2.3.
   "Place Order" on the consumer page in incognito to see what payment methods
   the sandbox offers (card auth likely unconfigured — the failure mode itself
   is informative).
+
+---
+
+## Zach reply #2 — scheduling fork CLOSED PERMANENTLY; KDS unblocked (2026-07-08)
+
+Three facts, decoded:
+
+1. **Open tabs and scheduled orders are MUTUALLY EXCLUSIVE — hard-coded.**
+   A valid schedule + `openTab:true` throws an explicit "Open tabs cannot be
+   scheduled" error. Chain to the verdict: scheduled ⇒ closed tab ⇒
+   `payments[]` zeroing the balance ⇒ processor ⇒ unreachable under Client
+   Credentials (permanent, access-model). **GoTab-held scheduling is
+   STRUCTURALLY incompatible with our integration** — not config-blocked,
+   excluded. `holdsSchedule=false` goes from chosen-by-measurement to
+   only-viable-mode (and it measured 46ms, so: fine). The zone order-interval
+   hunt is moot for us. Register entry #3 updated; the code seam is annotated
+   so nobody flips into a guaranteed error.
+   → 2.3 consequence: "diners pay the GoTab tab BEFORE we fire" has no shape
+   on this path — the only pre-fire GoTab object possible is an EMPTY tab
+   (items on an open tab fire at add time). Pay-before-fire via GoTab is
+   effectively dead; the gate's remaining live options are our-side payment
+   (existing seam) or pay-after/at-fire models. Zach is running his own tests
+   for "a more solidified answer" — expect a follow-up.
+2. **Field-name/format reconciliation — explains every observation.** The
+   real field is likely `scheduledDate`, and internal parsing needs **UNIX
+   EPOCH SECONDS** (docs say ISO — wrong; he's correcting them). Our ISO
+   `scheduled` was never parsed as valid → treated as absent → silent ASAP
+   coercion with no error — fully consistent with his hard rule. Confirm-test
+   written: `scripts/probe-scheduled-epoch.ts` — the EXPECTED SUCCESS is an
+   explicit rejection (strands nothing); silent acceptance on both names
+   means neither parses (tell him). **PROBE RESULT (same day): matrix
+   complete.** `scheduled` is NOT an input field at all — silently ignored in
+   ISO AND epoch formats (the Order row's `scheduled` is output-only).
+   `scheduledDate` + epoch + openTab:true → **deterministic HTTP 500**
+   (twice: ~16:53:45Z and ~16:55:17Z, epochs 1783529805/1783529896, Konjo) —
+   almost certainly the hard rule throwing internally without a mapped
+   client error. Mutual exclusivity CONFIRMED in behavior; error-mapping bug
+   reported to Zach with timestamps. Stranded tab from the test:
+   `KrTD1vf3Gj4olTlvmZCHtMin` (settle pile).
+3. **KDS permissions ADDED to the sandbox accounts.** "Displays" should now
+   appear in the manager left menu → add a display (activation code; his doc
+   link: docs.gotab.io/operator/kds-printers-additional-display-setup/
+   displaysetup/). Unblocks `prepared` — and the best possible first test:
+   the parked 46ms demo group (`b2033d0e`) still has two live SENT orders;
+   provision a Konjo display, BUMP order 133492491, and reconcile should
+   march ticket → READY and the group toward COMPLETED with ScheduleOutcome
+   finalizing — the full lifecycle against real GoTab, completing days after
+   it fired. (Motor order 133492158 needs a Motor-location display for its
+   bump.)
+
+**Next actions from this reply, in order:** (1) run the epoch probe → reply
+to Zach with the result; (2) check Displays → provision a Konjo KDS;
+(3) bump the parked demo order → watch the lifecycle complete (worker must
+be running); (4) fold the shared-tab / pay-sequencing answers into 2.3 when
+his follow-up lands.
+
+---
+
+## KDS live + FIRST COMPLETE LIVE LIFECYCLE — 2026-07-08 (the crown)
+
+**Group `560ab7cf` lived its entire life against real GoTab in 47 seconds of
+wall time: paid → scheduled → fired (order 133581495, ~700ms submit) →
+landed on a real KDS with a chime → prepped + expo-fulfilled by hand →
+reconcile caught `prepared` within one tick → READY → COMPLETED, with the
+first real `ScheduleOutcome` row finalized (targetErrorMs ≈ −133s: predicted
+3min cook, bumped in ~47s — the calibration telemetry measuring reality vs
+estimate on row one, exactly as designed). Every state transition in the
+system is now verified against the live platform. No mocks in the chain.**
+
+### The KDS saga (how `prepared` actually works — all empirically verified)
+- **GoTops has a native WINDOWS build** (`gotab.io/windows/gotops`) — the
+  activation code from Displays → New Display System is entered IN GoTops on
+  the device becoming the screen (the dashboard's own "Activate Display"
+  4-box modal is a different pairing direction — not where the code goes).
+- **`prepared` is a STATION-CHAIN completion, not one tap.** Prep-station tap
+  = stage marker only (touches `statusChanged`, ticket shows "Waiting on
+  other stations"). The completing action is the EXPO stage: the in-app
+  display setting **"Expo Station" toggle** turns a display into the expo
+  view, whose ticket modal offers **Fulfill All Items / Prep All Items /
+  Print Chit / Reset Order / Rush**.
+- **Expo "Fulfill All Items" sets `prepared` + `dispatched` + status
+  `DELIVERED` in the same instant; `fulfilled` stays NULL** despite the
+  button's name. `mapGoTabStatus` checks `prepared` first → maps to READY
+  with ZERO code changes — the June mapping survived first contact.
+- Items with no station assignment route to the phantom "Default (No print)"
+  station (per GoTab's KDS doc — the documented cause of stuck "Waiting on
+  other stations"); the Expo toggle resolved it here.
+- Display settings decoded: **"Hide Overdue Orders After: 2h"** is why
+  yesterday's parked orders don't render (NOT fiscal-day filtering — earlier
+  hypothesis corrected); Countdown Timer / "late" chip is driven by prep-time
+  config (the `orderPrepTimeMs` connection); Auto-Text On Fulfillment exists
+  (consumer SMS on bump — Branch-A-relevant); "Show Held Orders" + "Hide
+  Scheduled Dine-In Orders" toggles imply scheduled-order KDS behavior for
+  venues that have it.
+- DSC implication (questionnaire Q11–12 sharpened): per-vendor `prepared`
+  semantics depend on each vendor's STATION CONFIG, not just "do they bump" —
+  a single-station vendor with expo-off may never produce `prepared` at all.
+
+### Resilience observed + one new backlog item
+Yesterday's zombie ticket (`ae32a821`, the parked 46ms-demo group) hit a
+transient GoTab 503 (14:27) and a network blip (16:00) during reconcile —
+both times the per-ticket catch logged at error level and the loop continued;
+next tick is the retry, by design. BUT: **nothing expires perma-FIRED
+groups** — they poll GoTab forever (M4 expires idle OPEN only). Backlog:
+stale-FIRED expiry in the sweep family. Sandbox cleanup meanwhile: manually
+CANCEL group `b2033d0e` + its two tickets in prisma studio if the noise
+annoys; its tabs join the settle pile.
+
+### Where this leaves Phase 2
+Submission, stagger fidelity (46ms), status polling, `prepared`, full
+lifecycle, telemetry finalization: ALL live-verified. Remaining in phase:
+Zach's follow-up (scheduling officially dead-or-not, shared-tab/settlement
+shape → 2.3), `cancelTicket`, formalizing `test:gotab`, and the operator
+questions (Jon). The engineering risk register for the core product is,
+as of today, EMPTY.
 
 
 

@@ -23,8 +23,8 @@ import { GoTabClient } from '../src/vendor-adapter/gotab-client.js';
 
 // ── Knobs (defaults = the 2026-07-07 02:23Z probe run) ─────────────────────
 const KONJO_LOC = 'ZQFbjpg06x4rf1w08RTuOhGa';
-const TARGET_ORDER_ID = '133490055'; // adapter smoke order, 2026-07-07 16:46Z
-const OUR_SCHEDULED_ISO = '2026-07-07T16:46:07.844Z'; // acceptedAt (ASAP — no schedule requested)
+const TARGET_ORDER_ID = '133574468'; // epoch-probe stray — bump it on the new KDS, then run this
+const OUR_SCHEDULED_ISO = '2026-07-08T16:55:18.439Z'; // its placed time (ASAP order)
 const POLL_INTERVAL_MS = 15_000;
 const MAX_POLLS = 12;
 // ────────────────────────────────────────────────────────────────────────────

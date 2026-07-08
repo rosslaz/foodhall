@@ -18,19 +18,21 @@ import type {
 
 // Real GoTab integration.
 //
-// STATUS (2026-07-07): submitTicket IMPLEMENTED in we-hold-timers mode
-// (holdsSchedule = false) against the empirically verified open-tab path.
-// The holdsSchedule fork is RESOLVED-TO-FALSE-FOR-NOW:
+// STATUS (2026-07-08): submitTicket LIVE in we-hold-timers mode
+// (holdsSchedule = false). The holdsSchedule fork is CLOSED PERMANENTLY:
 //   - Order creation works: openTab:true, no payments[] (Zach, 2026-07-02;
-//     verified live 2026-07-06 — orders reach SENT in ~200ms).
-//   - GoTab-HELD scheduling does NOT work yet: every API order is coerced to
-//     ASAP regardless of zone config (isAsap:true, scheduled defaulted to
-//     placed; verified on two zones incl. one built with asapOnly:false).
-//     Zone order-interval config appears required and is not reachable from
-//     any surface we have — escalated to Zach 2026-07-07. If his answer makes
-//     it real, flip holdsSchedule to true: the `scheduled` seam is already in
-//     the request body below, gated on the flag. Until then ASAP-at-fire-time
-//     is exactly what we-hold-timers mode wants.
+//     verified live 2026-07-06 — orders reach SENT in ~200ms). Measured
+//     end-to-end stagger fidelity of this mode: 46ms error on 300s.
+//   - GoTab-HELD scheduling is STRUCTURALLY EXCLUDED for this integration
+//     (Zach, 2026-07-08): open tabs and scheduled orders are mutually
+//     exclusive in GoTab's code (a valid schedule + openTab:true throws
+//     "Open tabs cannot be scheduled"), and a scheduled CLOSED tab requires
+//     payments[] ⇒ a processor ⇒ unreachable under Client Credentials.
+//     Also: the real field is likely `scheduledDate` taking UNIX EPOCH
+//     SECONDS (docs' ISO guidance is wrong) — which is why our earlier ISO
+//     `scheduled` was silently ignored rather than rejected.
+//     Do NOT flip holdsSchedule to true unless GoTab ships scheduled open
+//     tabs or the access model changes.
 //
 // ADAPTER LAW (project doc, 2026-07-06/07 — all encoded in this file + client):
 //   1. Targeted lookups only. Bare location{ordersList} TIMES OUT server-side.
@@ -95,10 +97,10 @@ const LATE_TARGET_FALLBACK_MS = 60_000;
 export class GoTabAdapter implements VendorAdapter {
   readonly name = 'gotab';
 
-  // RESOLVED-TO-FALSE-FOR-NOW (see header). We hold durable BullMQ timers and
-  // submit ASAP orders at fire time. Flip to true ONLY when GoTab-held
-  // scheduling is verified end-to-end (Zach escalation pending): the submit
-  // body's `scheduled` seam below activates automatically on the flag.
+  // PERMANENT (see header, 2026-07-08): GoTab-held scheduling is structurally
+  // excluded for this integration — open tabs ⊕ scheduled orders, and closed
+  // tabs need a processor we cannot reach. We hold durable BullMQ timers and
+  // submit ASAP orders at fire time (measured: 46ms stagger error on 300s).
   readonly holdsSchedule = false;
 
   private readonly client: GoTabClient;
@@ -158,9 +160,13 @@ export class GoTabAdapter implements VendorAdapter {
         quantity: i.qty,
       })),
       ...(notes ? { notes } : {}),
-      // The holdsSchedule flip seam: in we-hold-timers mode we deliberately
-      // send NO `scheduled` field — ASAP firing at submit time is the point.
-      // When the flag flips (GoTab-held verified), future fire times ride here.
+      // HISTORICAL SEAM — kept as documentation of the exclusion, not as a
+      // live option (2026-07-08): flipping holdsSchedule would make this send
+      // a schedule on an OPEN tab, which GoTab hard-rejects ("Open tabs
+      // cannot be scheduled"); and the field/format here (`scheduled`, ISO)
+      // is wrong anyway — the real parse is likely `scheduledDate` + epoch
+      // seconds. GoTab-held mode would require closed tabs + settlement,
+      // unreachable under Client Credentials. ASAP-at-fire-time is the mode.
       ...(this.holdsSchedule && req.scheduledFor > now
         ? { scheduled: req.scheduledFor.toISOString() }
         : {}),
