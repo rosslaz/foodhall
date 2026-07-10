@@ -1663,6 +1663,50 @@ shape → 2.3), `cancelTicket`, formalizing `test:gotab`, and the operator
 questions (Jon). The engineering risk register for the core product is,
 as of today, EMPTY.
 
+---
+
+## Zach reply #3 — the 2.3 payment gate OPENS (2026-07-08)
+
+1. **500 diagnosis 100% validated** — he repro'd locally; it IS the "open
+   tabs cannot be scheduled" rule throwing unmapped; error-mapping cleanup
+   ticketed on their side. (Our bug report style worked — keep it.)
+2. **Scheduled OPEN tabs: permanently off** — "quite nestled in… out of my
+   reach for a change." Register decision #3 stands verbatim.
+3. **THE HINT (new 2.3 path):** scheduling is "deterministic based on the
+   payment/settlement question — the two play hand in hand." If diners pay
+   "through a payment SDK directly," then **openTab:false + scheduling could
+   be a good path** — i.e., diner payments supply the `payments[]` a closed
+   tab requires, un-blocking the closed-tab chain WITHOUT our integration
+   touching a processor. Potentially resolves settlement + pay-before-fire +
+   (bonus) GoTab-held scheduling in one shape. He asked us directly: what's
+   the expectation for how diners pay?
+4. **Discipline note:** what we NEED is settlement + per-member payment UX;
+   held-scheduling is a resilience bonus only (our timers: 46ms, built,
+   verified). Evaluate the SDK path on the payment merits; don't re-architect
+   for scheduling.
+5. **Reply sent (same day):** described our model (groups of 2–8, each member
+   pays their own share BEFORE any food fires; all-paid gates firing), stated
+   the Branch-A preference (GoTab owns payment end-to-end, we never touch
+   card data or move money, funds settle natively per vendor), and asked the
+   four shape questions: (i) what payment SDK / docs exist for an integration
+   like ours; (ii) can multiple diners each pay their share toward a tab —
+   per-member payments before/at closed-tab creation; (iii) tabs are
+   location-scoped and a group's food spans N vendor tabs — how does one
+   diner pay ONCE across vendors (parent-location construct?); (iv) refund
+   story if a scheduled closed tab must be cancelled (group falls apart).
+   Plus: scheduling itself is optional for us — payment is the real question.
+
+### WEEKEND BREAK — Monday 2026-07-13 pickup list
+Ross camping until Monday. State at close: all engineering verified, both
+support threads with Zach (SDK/payment questions pending — THE 2.3 evidence),
+everything committed. Monday, in order: (1) read Zach's SDK answers → record
+as 2.3 evidence; (2) **Motor KDS + the two-vendor showcase run** (two
+kitchens chiming 5 min apart, group COMPLETED, real readySpreadMs — this is
+the Jon demo artifact, rehearse it); (3) finding-#7 enforcement (prep Phase
+A); (4) book the Jon meeting. Small queue behind those: test:gotab
+formalization, stale-FIRED sweep, tab-settle hygiene, zombie group
+`b2033d0e` cancel.
+
 
 
 
