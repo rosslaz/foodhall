@@ -37,6 +37,7 @@
   .item { display: flex; justify-content: space-between; align-items: center; padding: 9px 0;
     border-top: 1px solid var(--line); }
   .item:first-child { border-top: none; }
+  .item.disabled { opacity: .5; }
   .name { font-weight: 600; }
   .meta { color: var(--muted); font-size: 13px; }
   .bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--surface);
@@ -209,13 +210,23 @@ async function loadMenu() {
     const card = document.createElement('div'); card.className = 'card';
     card.innerHTML = '<div class="vendor">' + esc(v.name) + '</div>';
     for (const it of v.menuItems) {
-      const row = document.createElement('div'); row.className = 'item';
+      // Orderability (finding #7 / review H2): items whose prep time was
+      // never confirmed store an honest 0 — scheduling them would silently
+      // destroy the stagger, so the server rejects them and the UI doesn't
+      // offer them. Shown (greyed) rather than hidden: diners can ask staff.
+      const orderable = it.prepConfirmed !== false;
+      const row = document.createElement('div'); row.className = 'item' + (orderable ? '' : ' disabled');
       row.innerHTML =
         '<div><div class="name">' + esc(it.name) + '</div>' +
-        '<div class="meta">' + money(it.priceCents) + ' · ~' + Math.round(it.prepSeconds/60) + ' min</div></div>';
-      const btn = document.createElement('button'); btn.className = 'sm'; btn.textContent = 'Add';
-      btn.onclick = () => addItem(it.id);
-      row.appendChild(btn); card.appendChild(row);
+        '<div class="meta">' + money(it.priceCents) +
+        (orderable ? ' · ~' + Math.round(it.prepSeconds/60) + ' min' : ' · not yet orderable') +
+        '</div></div>';
+      if (orderable) {
+        const btn = document.createElement('button'); btn.className = 'sm'; btn.textContent = 'Add';
+        btn.onclick = () => addItem(it.id);
+        row.appendChild(btn);
+      }
+      card.appendChild(row);
     }
     el.appendChild(card);
   }

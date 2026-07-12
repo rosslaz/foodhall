@@ -8,6 +8,7 @@ import { config } from '../../config/index.js';
 import { computeSchedule } from '../scheduler/scheduler.js';
 import { getPrepEstimator } from '../scheduler/prep-estimates.js';
 import { markGroupFired } from './status.service.js';
+import { isTerminalVendorError } from './vendor-errors.js';
 import { Prisma } from '@prisma/client';
 
 // Group order lifecycle: lock -> (everyone pays) -> schedule -> fire -> ready.
@@ -34,7 +35,17 @@ export async function lockGroup(groupId: string) {
           include: {
             orderItems: {
               where: { status: 'ACTIVE' },
-              include: { menuItem: { select: { vendorId: true } } },
+              include: {
+                menuItem: {
+                  select: {
+                    vendorId: true,
+                    name: true,
+                    prepConfirmed: true,
+                    gotabProductUuid: true,
+                    vendor: { select: { name: true, gotabLocationId: true } },
+                  },
+                },
+              },
             },
           },
         },
@@ -45,6 +56,34 @@ export async function lockGroup(groupId: string) {
 
     const allItems = group.members.flatMap((m) => m.orderItems);
     if (allItems.length === 0) throw badRequest('Cannot lock an empty group');
+
+    // FIREABILITY GUARDS (review H1+H2, 2026-07-08) — the last line of
+    // defense before money changes hands. The add-item route enforces the
+    // same rules for UX, but items can predate a config change (adapter
+    // flipped, vendor edited, prep un-confirmed by a re-import), so the lock
+    // re-validates everything. Failing HERE is loud and recoverable (host
+    // removes the item); failing at fire time strands a paid group behind an
+    // eternal countdown.
+    const notOrderable = allItems.filter((i) => i.menuItem.prepConfirmed === false);
+    if (notOrderable.length > 0) {
+      throw badRequest(
+        'These items are not orderable yet (no prep time set): ' +
+          [...new Set(notOrderable.map((i) => i.menuItem.name))].join(', ') +
+          '. Remove them or ask staff to set prep times.',
+      );
+    }
+    if (config.VENDOR_ADAPTER === 'gotab') {
+      const unfireable = allItems.filter(
+        (i) => !i.menuItem.vendor.gotabLocationId || !i.menuItem.gotabProductUuid,
+      );
+      if (unfireable.length > 0) {
+        throw badRequest(
+          'These items cannot be sent to the kitchen system: ' +
+            [...new Set(unfireable.map((i) => `${i.menuItem.name} (${i.menuItem.vendor.name})`))].join(', ') +
+            '. Remove them or ask staff.',
+        );
+      }
+    }
 
     // Provisional schedule for display while the group pays. Real fire times
     // are re-anchored in maybeSchedule() at the all-paid moment.
@@ -333,7 +372,7 @@ async function submitTicketToVendor(ticketId: string, opts: { markFired: boolean
 
 // Worker entry point (we-hold-timers mode), runs at the ticket's fireAt.
 export async function fireTicket(ticketId: string) {
-  await submitTicketToVendor(ticketId, { markFired: true });
+  await submitWithTerminalHandling(ticketId, { markFired: true });
 }
 
 // Sweep backstop (see sweeps.service.ts): re-drive a ticket whose submission
@@ -345,7 +384,56 @@ export async function redriveTicket(ticketId: string) {
   // Platform-held mode: submit so the platform owns the (possibly already
   // past) schedule. We-hold-timers mode: the fire moment has passed — fire
   // it now rather than re-enqueueing a delayed job.
-  await submitTicketToVendor(ticketId, { markFired: !adapter.holdsSchedule });
+  await submitWithTerminalHandling(ticketId, { markFired: !adapter.holdsSchedule });
+}
+
+// TERMINAL-FAILURE HANDLING (review H1, 2026-07-08). Both submit entry points
+// (fire job and sweep redrive) route through here: a terminal error — config
+// mistakes the adapter rejects deliberately, or the duplicate-risk
+// GOTAB_NO_ORDER_ID case (M1) — must NOT retry (BullMQ) and must NOT redrive
+// (sweep). Before this existed, a misconfigured item meant infinite redrives
+// and diners watching an eternal countdown: the table-never-fed scenario.
+// Now: ticket → FAILED (sweep targets PENDING, so the loop dies), group →
+// CANCELLED (countdown stops; clients render a terminal state), sibling
+// PENDING tickets → CANCELLED (their timers no-op on the status guard).
+// Already-FIRED siblings cannot be un-cooked — they finish at the kitchen;
+// staff resolve via the dashboard. Refund flow = finding #6 (2.3 gate).
+async function submitWithTerminalHandling(ticketId: string, opts: { markFired: boolean }) {
+  try {
+    await submitTicketToVendor(ticketId, opts);
+  } catch (err) {
+    if (!isTerminalVendorError(err)) throw err; // retryable path unchanged
+
+    const failed = await prisma.ticket.updateMany({
+      where: { id: ticketId, status: 'PENDING' },
+      data: { status: 'FAILED' },
+    });
+    if (failed.count === 0) return; // raced with another transition — nothing to do
+
+    logger.error(
+      { ticketId, err },
+      'TERMINAL submit failure — ticket FAILED, cancelling group (config error; retrying cannot fix; see review H1)',
+    );
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: { groupId: true },
+    });
+    if (!ticket) return;
+    await prisma.$transaction(async (tx) => {
+      const cancelled = await tx.groupOrder.updateMany({
+        where: { id: ticket.groupId, status: { in: ['SCHEDULED', 'FIRED'] } },
+        data: { status: 'CANCELLED' },
+      });
+      if (cancelled.count > 0) {
+        await tx.ticket.updateMany({
+          where: { groupId: ticket.groupId, status: 'PENDING' },
+          data: { status: 'CANCELLED' },
+        });
+      }
+    });
+    await realtime.publish({ type: 'group.updated', groupId: ticket.groupId });
+    // Swallow: the job succeeds so BullMQ does not retry a terminal failure.
+  }
 }
 
 // Payment timeout: drop items of members who never paid, then schedule what

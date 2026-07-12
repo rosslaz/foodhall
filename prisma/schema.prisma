@@ -36,6 +36,10 @@ enum TicketStatus {
   IN_PROGRESS // vendor cooking
   READY       // vendor marked ready
   CANCELLED
+  FAILED      // TERMINAL submit failure (config error: unmapped item, no
+              // GoTab location/spot). Set by the fire path so the sweep stops
+              // redriving and the group is visibly cancelled instead of
+              // showing an eternal countdown (review H1, fixed 2026-07-08).
 }
 
 enum OrderItemStatus {

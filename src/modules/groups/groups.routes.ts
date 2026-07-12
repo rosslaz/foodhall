@@ -3,6 +3,7 @@ import { customAlphabet } from 'nanoid';
 import { z } from 'zod';
 import { prisma } from '../../db/client.js';
 import { badRequest, conflict, forbidden, notFound } from '../../lib/errors.js';
+import { config } from '../../config/index.js';
 import { realtime } from '../realtime/broker.js';
 import { lockGroup } from '../orders/orders.service.js';
 import {
@@ -185,7 +186,7 @@ export async function groupRoutes(app: FastifyInstance) {
     const { menuItemId, qty, notes } = addItemSchema.parse(req.body);
     const menuItem = await prisma.menuItem.findUnique({
       where: { id: menuItemId },
-      include: { vendor: { select: { foodHallId: true } } },
+      include: { vendor: { select: { foodHallId: true, name: true, gotabLocationId: true } } },
     });
     // Tenant guard: the item must belong to a vendor in THIS group's hall.
     // Harmless with one hall, but the schema is multi-tenant from day one and
@@ -193,6 +194,30 @@ export async function groupRoutes(app: FastifyInstance) {
     // id from hall B could be injected into a hall A order.
     if (!menuItem || !menuItem.available || menuItem.vendor.foodHallId !== group.foodHallId) {
       throw badRequest('Item unavailable');
+    }
+
+    // ORDERABILITY GUARDS (review H1+H2 / finding #7, 2026-07-08). Reject at
+    // the moment of choosing, with a reason a diner can act on — the lock
+    // re-validates as the backstop. (Deliberately NOT filtered out of the
+    // menu response: the admin page reads the same endpoint — finding #5.)
+    if (menuItem.prepConfirmed === false) {
+      // Honest-zero prep (finding #7): scheduling this would silently destroy
+      // the stagger — the whole product.
+      throw badRequest('This item is not orderable yet (prep time not set)');
+    }
+    if (config.VENDOR_ADAPTER === 'gotab') {
+      // Real-adapter mode: every ordered item must be fireable, or the fire
+      // job fails terminally after payment (review H1). Old mock-seeded
+      // vendors (no GoTab location) and hand-added items (no product
+      // mapping) are the two ways to trip this.
+      if (!menuItem.vendor.gotabLocationId) {
+        throw badRequest(
+          `${menuItem.vendor.name} isn't connected to the kitchen system yet — please ask staff`,
+        );
+      }
+      if (!menuItem.gotabProductUuid) {
+        throw badRequest('This item cannot be ordered right now (not linked to the kitchen system)');
+      }
     }
 
     const item = await prisma.orderItem.create({

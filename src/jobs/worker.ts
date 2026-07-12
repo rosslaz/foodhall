@@ -66,9 +66,22 @@ for (const w of [fireWorker, scheduleWorker, timeoutWorker]) {
 // and complete groups. Cheap, and trivially replaceable by a GoTab webhook
 // later (see status.service.ts). The heartbeat is written here — first, so a
 // wedged reconcile still shows up as a stale beat rather than a healthy one.
+// OVERLAP GUARD (review #3 fresh-eyes, 2026-07-08): a reconcile pass that
+// outruns the 10s interval (many in-flight tickets × the 280ms GoTab pacing
+// gate) must not stack concurrent passes — correctness would survive (all
+// transitions are conditional) but the duplicate polls burn the 4rps budget.
+// Skipped ticks are logged so a chronically slow reconcile is visible.
+let reconcileInFlight = false;
 const reconcileLoop = setInterval(() => {
   beatWorkerHeartbeat().catch((err) => logger.error({ err }, 'heartbeat write failed'));
-  reconcileSubmittedTickets().catch((err) => logger.error({ err }, 'reconcile loop error'));
+  if (reconcileInFlight) {
+    logger.warn('reconcile still running from previous tick — skipping (see review M4: batch-status query is the scale fix)');
+    return;
+  }
+  reconcileInFlight = true;
+  reconcileSubmittedTickets()
+    .catch((err) => logger.error({ err }, 'reconcile loop error'))
+    .finally(() => { reconcileInFlight = false; });
 }, 10_000);
 
 // Stuck-state + lifecycle sweeps (see sweeps.service.ts): the backstop for

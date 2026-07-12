@@ -1696,14 +1696,87 @@ as of today, EMPTY.
    story if a scheduled closed tab must be cancelled (group falls apart).
    Plus: scheduling itself is optional for us — payment is the real question.
 
+## CODE REVIEW #3 — 2026-07-08, pre-weekend (everything since the 07-02 review)
+
+Scope: adapter build, client hardening, availability sync, admin fixes,
+call-site wiring. Lens: "a table silently not getting fed." Verified clean:
+new-code XSS discipline, pacing-gate slot reservation, 429/401 interplay,
+conditional transitions, ctx threading, tilde encoding, sweep's hand-added
+protection (+ typecheck/23 unit/9 int green).
+
+**HIGH**
+- **H1 — Terminal submit misconfig strands a group INVISIBLY.** Unmapped item
+  (GOTAB_UNMAPPED_ITEMS), vendor with NULL gotabLocationId under the gotab
+  adapter (builder falls back to vendor.id → GoTab 404 — old mock-seeded
+  vendors are live landmines), or GOTAB_NO_SPOT ⇒ fire fails terminally,
+  BullMQ ×5 then sweep redrives FOREVER, error spam — and diners watch an
+  eternal countdown; nothing marks the group failed. FIX (one work item, same
+  family as finding #7 / prep Phase A): (a) fail-fast guards at add-item/lock
+  — item mapped + vendor has gotabLocationId when adapter is real; (b)
+  terminal-error classification in the fire path (4xx AppError → visible
+  failed state, not infinite redrive).
+- **H2 — Finding #7 stands** (unconfirmed prep orderable at honest 0). Merge
+  with H1 into the Monday Phase-A work.
+
+**MEDIUM**
+- **M1 — In-process duplicate-submit window**: idempotency map set AFTER
+  orderId extraction; any throw between GoTab-accept and map.set (e.g.
+  GOTAB_NO_ORDER_ID, response-read failure) ⇒ retry creates a SECOND real
+  kitchen order. Fix: classify GOTAB_NO_ORDER_ID terminal-investigate.
+- **M2 — Finding #4 grew**: import tx now heavier (availability sync +
+  sweep) — parent-location (~400 products) import will blow the 5s
+  interactive-tx window. BLOCKS DSC onboarding via parent; chunk before
+  seeding real menus.
+- **M3 — Finding #6 stands** (pay-after-drop never REFUNDED) — real money at
+  the 2.3 gate.
+- **M4 — Reconcile scaling**: serial polls × 280ms pacing outrun the 10s tick
+  around ~30 in-flight tickets; batch-status query is the known fix. Fine at
+  POC scale. (Stale-FIRED zombie polling already on backlog.)
+
+**LOW**
+- L1 notes `.slice(0,200)` silently truncates — dormant (no notes UI), but
+  allergy-adjacent; make explicit when notes ship.
+- L2 resolveSpot cache never invalidates (spot reconfig → needs worker
+  restart).
+- L3 submittedByTicket map unbounded (trivial memory; clears on restart).
+- L4 **admin 401 fix UNVERIFIED** — the three manual checks were never run;
+  2 min Monday. enterDash also lacks an error path if the API is down.
+- L5 Finding #5 stands (admin blind to available:false), mitigated by named
+  import summaries.
+- L6 No unitPrice sent — GoTab prices from ITS catalog; price drift between
+  import and order = our-records-vs-tab mismatch → a 2.3 reconciliation
+  question.
+
+**Verdict: nothing blocks the weekend. UPDATE (same day): H1+H2 FIX
+IMPLEMENTED pre-departure** — changeset: `TicketStatus.FAILED` (migration
+`ticket_failed_status`, additive); pure `vendor-errors.ts` classifier
+(terminal = 4xx AppError or GOTAB_NO_ORDER_ID, the M1 duplicate-risk case) +
+4 unit tests; `submitWithTerminalHandling` wraps BOTH fire + redrive paths
+(terminal → ticket FAILED, group CANCELLED, sibling PENDING tickets
+CANCELLED, loud log, no retry — sweep excludes FAILED so the redrive loop
+dies); add-item guards (prepConfirmed + gotab-mode fireability, diner-
+readable messages); lock re-validates everything (backstop for config
+changes post-add); customer UI greys unconfirmed items ("not yet
+orderable"); worker reconcile overlap guard (fresh-eyes finding). **GATES
+GREEN 2026-07-08 pre-departure**: migrate applied (`ticket_failed_status`),
+typecheck clean, 27 unit (18+4+5), 9 integration — the int suite runs
+fire/redrive THROUGH the new wrapper, proving the happy path undisturbed.
+A4-style integration tests (add-unconfirmed→400; terminal fire→FAILED+group
+CANCELLED) deliberately deferred to Monday — first gate item.
+
 ### WEEKEND BREAK — Monday 2026-07-13 pickup list
 Ross camping until Monday. State at close: all engineering verified, both
 support threads with Zach (SDK/payment questions pending — THE 2.3 evidence),
 everything committed. Monday, in order: (1) read Zach's SDK answers → record
 as 2.3 evidence; (2) **Motor KDS + the two-vendor showcase run** (two
 kitchens chiming 5 min apart, group COMPLETED, real readySpreadMs — this is
-the Jon demo artifact, rehearse it); (3) finding-#7 enforcement (prep Phase
-A); (4) book the Jon meeting. Small queue behind those: test:gotab
+the Jon demo artifact, rehearse it); (3) **H1/H2 follow-through**: run the
+gates if not done pre-departure — DONE 2026-07-08 (migrate, typecheck, 27
+unit, 9 int green) — so Monday's real items are: verify L4 (admin 401 manual
+checks) and write the A4-style integration
+tests (add-unconfirmed → 400; terminal fire → ticket FAILED + group
+CANCELLED via fastify.inject); (4) book
+the Jon meeting. Small queue behind those: verify the admin 401 fix (L4), test:gotab
 formalization, stale-FIRED sweep, tab-settle hygiene, zombie group
 `b2033d0e` cancel.
 
