@@ -1726,7 +1726,17 @@ protection (+ typecheck/23 unit/9 int green).
 - **M2 — Finding #4 grew**: import tx now heavier (availability sync +
   sweep) — parent-location (~400 products) import will blow the 5s
   interactive-tx window. BLOCKS DSC onboarding via parent; chunk before
-  seeding real menus.
+  seeding real menus. **FIXED 2026-07-12**: reworked to set-based IDEMPOTENT
+  CONVERGENCE — no interactive tx at all (~8 round trips for 400 products,
+  was ~800): batch read → in-memory diff → one createMany (skipDuplicates)
+  → chunked updates for CHANGED rows only → sweep last (structurally cannot
+  touch fetched items) → one final read; response shape byte-identical.
+  Proof is STRUCTURAL (nothing left to time out — local PG would have
+  masked a wall-clock assertion) + `import.int.test.ts` (3 tests, mocked
+  import adapter): 400-product import via the real authed HTTP route; full
+  re-import sync matrix (price/86/upstream-removal/new-item/admin-prep
+  preservation/no duplicates); prep-confirmation flow. Gate now typecheck +
+  27 unit + 16 int.
 - **M3 — Finding #6 stands** (pay-after-drop never REFUNDED) — real money at
   the 2.3 gate.
 - **M4 — Reconcile scaling**: serial polls × 280ms pacing outrun the 10s tick
@@ -1783,8 +1793,10 @@ kitchens chiming 5 min apart, group COMPLETED, real readySpreadMs — this is
 the Jon demo artifact, rehearse it); (3) **H1/H2 follow-through**: run the
 gates if not done pre-departure — DONE 2026-07-08 — and the A4 integration
 tests — DONE 2026-07-12 (13 int total) — and L4 — VERIFIED 2026-07-12 —
-item 3 fully closed; (4) book
-the Jon meeting. Small queue behind those: test:gotab
+item 3 fully closed; (4) ~~book
+the Jon meeting~~ **SET: demo at soccer camp with Jon, 2026-07-21** (kids
+play together — informal, in person; staging per the DEMO SCRIPT below, with
+the field-logistics work noted there). Small queue behind those: test:gotab
 formalization, stale-FIRED sweep, tab-settle hygiene, zombie group
 `b2033d0e` cancel.
 
