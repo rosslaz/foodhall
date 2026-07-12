@@ -1761,8 +1761,15 @@ orderable"); worker reconcile overlap guard (fresh-eyes finding). **GATES
 GREEN 2026-07-08 pre-departure**: migrate applied (`ticket_failed_status`),
 typecheck clean, 27 unit (18+4+5), 9 integration — the int suite runs
 fire/redrive THROUGH the new wrapper, proving the happy path undisturbed.
-A4-style integration tests (add-unconfirmed→400; terminal fire→FAILED+group
-CANCELLED) deliberately deferred to Monday — first gate item.
+A4-style integration tests: **DONE 2026-07-12** (back from camping early) —
+`guards.int.test.ts`, 4 tests in an ISOLATED file (vi.mock on the vendor-
+adapter module; vitest per-file registries keep lifecycle.int.test.ts on the
+real mock): add-unconfirmed → 400 then 201 after confirmation; lock
+re-validates a post-add un-confirmation and rolls back cleanly; the full H1
+blast pattern incl. FIRED-sibling preservation and no-second-adapter-call;
+PENDING-sibling cancellation with timer no-op. Coverage boundary (deliberate,
+noted in-file): the config-gated gotab-mode guard branches await the
+test:gotab suite (2.7). Gate is now typecheck + 27 unit + 13 int.
 
 ### WEEKEND BREAK — Monday 2026-07-13 pickup list
 Ross camping until Monday. State at close: all engineering verified, both
@@ -1771,12 +1778,10 @@ everything committed. Monday, in order: (1) read Zach's SDK answers → record
 as 2.3 evidence; (2) **Motor KDS + the two-vendor showcase run** (two
 kitchens chiming 5 min apart, group COMPLETED, real readySpreadMs — this is
 the Jon demo artifact, rehearse it); (3) **H1/H2 follow-through**: run the
-gates if not done pre-departure — DONE 2026-07-08 (migrate, typecheck, 27
-unit, 9 int green) — so Monday's real items are: verify L4 (admin 401 manual
-checks) and write the A4-style integration
-tests (add-unconfirmed → 400; terminal fire → ticket FAILED + group
-CANCELLED via fastify.inject); (4) book
-the Jon meeting. Small queue behind those: verify the admin 401 fix (L4), test:gotab
+gates if not done pre-departure — DONE 2026-07-08 — and the A4 integration
+tests — DONE 2026-07-12 (13 int total) — so the remaining follow-through is:
+verify L4 (admin 401 manual checks); (4) book
+the Jon meeting. Small queue behind those: test:gotab
 formalization, stale-FIRED sweep, tab-settle hygiene, zombie group
 `b2033d0e` cancel.
 
