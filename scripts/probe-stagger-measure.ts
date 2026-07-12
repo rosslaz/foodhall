@@ -11,10 +11,11 @@ import { getGoTabAuth } from '../src/vendor-adapter/gotab-auth.js';
 import { GoTabClient } from '../src/vendor-adapter/gotab-client.js';
 import { parseGoTabTimestamp } from '../src/vendor-adapter/gotab.js';
 
-// The first end-to-end run (group b2033d0e, 2026-07-07 17:15Z):
+// The first end-to-end run (group b2033d0e, 2026-07-07 17:15Z) — superseded
+// by the two-vendor SHOWCASE run below (group 32062ff7, 2026-07-12 19:10Z):
 const ORDERS = [
-  { label: 'Motor (8min prep, offset 0)', loc: 'oSVMdw0wbSMqE~pOv7cUdkMd', orderId: '133492158', ourScheduledFor: '2026-07-07T17:15:37.598Z' },
-  { label: 'Konjo (3min prep, offset +300s)', loc: 'ZQFbjpg06x4rf1w08RTuOhGa', orderId: '133492491', ourScheduledFor: '2026-07-07T17:20:37.598Z' },
+  { label: 'Motor (8min prep, offset 0)', loc: 'oSVMdw0wbSMqE~pOv7cUdkMd', orderId: '134206938', ourScheduledFor: '2026-07-12T19:10:26.859Z' },
+  { label: 'Konjo (3min prep, offset +300s)', loc: 'ZQFbjpg06x4rf1w08RTuOhGa', orderId: '134208065', ourScheduledFor: '2026-07-12T19:15:26.859Z' },
 ];
 
 const client = new GoTabClient(getGoTabAuth());

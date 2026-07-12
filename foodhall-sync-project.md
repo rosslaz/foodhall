@@ -1739,8 +1739,11 @@ protection (+ typecheck/23 unit/9 int green).
 - L2 resolveSpot cache never invalidates (spot reconfig → needs worker
   restart).
 - L3 submittedByTicket map unbounded (trivial memory; clears on restart).
-- L4 **admin 401 fix UNVERIFIED** — the three manual checks were never run;
-  2 min Monday. enterDash also lacks an error path if the API is down.
+- L4 ~~admin 401 fix UNVERIFIED~~ **VERIFIED 2026-07-12**: all three manual
+  checks passed (normal login; garbage token → bounce at load, no dashboard
+  flash; valid-shaped-but-rejected token → dashboard loads, privileged click
+  bounces). Remaining nit stays LOW: enterDash lacks an error path if the
+  API is down.
 - L5 Finding #5 stands (admin blind to available:false), mitigated by named
   import summaries.
 - L6 No unitPrice sent — GoTab prices from ITS catalog; price drift between
@@ -1779,11 +1782,48 @@ as 2.3 evidence; (2) **Motor KDS + the two-vendor showcase run** (two
 kitchens chiming 5 min apart, group COMPLETED, real readySpreadMs — this is
 the Jon demo artifact, rehearse it); (3) **H1/H2 follow-through**: run the
 gates if not done pre-departure — DONE 2026-07-08 — and the A4 integration
-tests — DONE 2026-07-12 (13 int total) — so the remaining follow-through is:
-verify L4 (admin 401 manual checks); (4) book
+tests — DONE 2026-07-12 (13 int total) — and L4 — VERIFIED 2026-07-12 —
+item 3 fully closed; (4) book
 the Jon meeting. Small queue behind those: test:gotab
 formalization, stale-FIRED sweep, tab-settle hygiene, zombie group
 `b2033d0e` cancel.
+
+---
+
+## TWO-VENDOR SHOWCASE — 2026-07-12 (the Jon demo artifact, rehearsed)
+
+**Group `32062ff7` — the complete product story on two physical devices:
+Motor's kitchen on an iPhone (GoTops iOS), Konjo's on the PC. Motor chimed at
+T+0, Konjo at precisely T+5:00, both bumped near T+8, group COMPLETED at
+T+7:37.** Pickup list item 2: DONE.
+
+### The numbers (GoTab's clock)
+- **Stagger: 300.032s actual vs 300.000s intended — 32ms error** (n=2 with
+  the 07-07 run's 46ms; we-hold-timers fidelity is consistently sub-50ms).
+  Pipelines 0.18s / 0.19s — common-mode as ever. BullMQ delivered the +300s
+  job 59ms late.
+- **Kitchen-clock ready spread: 12.9s** (prepared 19:17:46.454 Konjo →
+  19:17:59.354 Motor) — **11% of the 120s sync window**, hand-bumped on two
+  devices. targetError ≈ −27.5s (landed early). The product KPI, measured on
+  the mechanism the product actually uses, in rehearsal conditions.
+- Orders: Motor 134206938 (tab `5m3csyhOfl3RG19Yj10T~4kg`), Konjo 134208065
+  (tab `2zgDCfoFpGgEAbNHSRoIxbld`) — settle pile +2.
+
+### Operational findings
+- **GoTops is single-instance per PC** — a second kitchen needs a second
+  device. The phone/PC split is BETTER for the demo anyway: two physically
+  separate kitchens read as "real system." Demo staging: Jon's phone as the
+  diner, Ross's phone as Motor's kitchen, laptop as Konjo's — the whole
+  product in three hands.
+- Expo Station toggle required on EVERY display (Konjo's lesson, applied to
+  Motor at zero cost).
+
+### DEMO SCRIPT (v1 — refine before the meeting)
+One diner (Jon's phone), one item each from two vendors with visibly
+different prep times → lock → pay → "watch": near kitchen chimes now, far
+kitchen chimes in exactly N minutes → bump both as they'd finish → countdown
+hits Ready, group completes → show the telemetry row: "this number — the gap
+between your dishes — is what we minimize, and we measure it on every order."
 
 
 
