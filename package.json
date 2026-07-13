@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:int": "vitest run --config vitest.int.config.ts",
+    "test:gotab": "vitest run --config vitest.gotab.config.ts",
     "check": "npm run typecheck && npm run test && npm run test:int"
   },
   "dependencies": {

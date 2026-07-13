@@ -310,7 +310,13 @@ raw-body HMAC verification before parsing, map to the existing conditional
 transitions, keep the 10s poll as fallback. If GoTab has no webhooks, the poll
 remains primary — it's already production-shaped.
 
-### 2.7 Adapter conformance tests
+### 2.7 Adapter conformance tests — DONE 2026-07-13
+
+(`npm run test:gotab`, creds-gated — 6 live tests: catalog/fixture-price,
+submit, idempotent resubmit, ctx + fallback status, cancelTicket 501
+contract-lock. Self-skips without creds; NOT in `npm run check`; strands one
+$10 Konjo tab per run. Grows when cancelTicket is implemented — the 501 test
+failing is the signal.)
 
 Add `npm run test:gotab` — an integration-style suite (same pattern as
 `test:int`) that runs only when sandbox creds are present: submit → observe
