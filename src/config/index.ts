@@ -41,6 +41,11 @@ const schema = z.object({
   // still open after hours is abandoned; expiring it also neutralizes its
   // members' session tokens, since every mutating route gates on status).
   GROUP_OPEN_EXPIRY_HOURS: z.coerce.number().default(6),
+  // FIRED groups whose targetReadyAt is this many hours past are dead — food
+  // was due hours ago and nothing advanced them (kitchen never bumped /
+  // vendor has no KDS). Expiring them stops the reconcile from polling GoTab
+  // for them forever (review backlog: zombie perma-FIRED groups).
+  GROUP_FIRED_EXPIRY_HOURS: z.coerce.number().default(4),
 });
 
 const parsed = schema.safeParse(process.env);

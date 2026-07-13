@@ -1794,11 +1794,11 @@ the Jon demo artifact, rehearse it); (3) **H1/H2 follow-through**: run the
 gates if not done pre-departure — DONE 2026-07-08 — and the A4 integration
 tests — DONE 2026-07-12 (13 int total) — and L4 — VERIFIED 2026-07-12 —
 item 3 fully closed; (4) ~~book
-the Jon meeting~~ **SET: demo at soccer camp with Jon, 2026-07-21** (kids
-play together — informal, in person; staging per the DEMO SCRIPT below, with
-the field-logistics work noted there). Small queue behind those: test:gotab
-formalization, stale-FIRED sweep, tab-settle hygiene, zombie group
-`b2033d0e` cancel.
+the Jon meeting~~ **SET: demo at soccer camp with Jon, 2026-07-21**. Small
+queue behind those: ~~test:gotab formalization~~ DONE 07-13, ~~stale-FIRED
+sweep~~ DONE 07-13, tab-settle hygiene (~7 tabs; +1 per test:gotab run),
+~~zombie group `b2033d0e` cancel~~ the new sweep auto-cancels it on the next
+worker run — verify, don't hand-cancel.
 
 ---
 
@@ -1862,6 +1862,41 @@ between your dishes — is what we minimize, and we measure it on every order."
   outdoors.
 - Friction count this run: 5, all converted (worker→ritual, mute→ritual,
   WSL-URL noise→code, firewall→done-once, which-URL→startup log).
+- **No `test:gotab` during the demo window** — each run drops a real
+  "FoodHall conf_..." ticket on the live Konjo KDS (observed 07-13: the
+  suite's order chilling on the display, going "late"). Great proof the net
+  is end-to-end real; terrible mid-demo surprise. Bump or let the 2h overdue
+  filter eat strays before showtime.
+
+---
+
+## test:gotab (2.7) + stale-FIRED sweep — 2026-07-13 (both DONE, gates green)
+
+**Gate is now typecheck + 27 unit + 18 int** (9 lifecycle + 4 guards + 3
+import + 2 sweeps); `npm run test:gotab` = 6 live conformance tests, 6/6 in
+4.3s on first run.
+
+- **Conformance suite** (`src/test/gotab/adapter-conformance.gotab.test.ts`,
+  own vitest config + manual .env loader — no dotenv dep, dummy fallbacks so
+  config parses creds-less): catalog read asserting the Konjo fixture item at
+  1000 cents; submit → numeric orderId; idempotent resubmit → same id; ctx
+  status with a retry loop for the create→sent race (took one retry live —
+  design vindicated); no-ctx fallback agreement; cancelTicket 501
+  CONTRACT-LOCK (when cancellation gets implemented this test fails — that's
+  the grow-the-suite signal). Creds-gated via describe.skipIf — CI shows
+  skipped, never red. Root vitest config already excludes src/test/** from
+  unit runs — no live-GoTab leak into `npm run check` (verified).
+- **Stale-FIRED sweep** (`sweepStaleFiredGroups`, GROUP_FIRED_EXPIRY_HOURS
+  default 4): FIRED groups with targetReadyAt hours past → conditional
+  CANCELLED + non-terminal tickets closed, warn-level SWEEP log, realtime
+  publish. Reconcile stops polling dead groups forever. 2 int tests (real
+  mock adapter: expiry blast + fresh-group-untouched + idempotence). The
+  07-07 zombie `b2033d0e` gets auto-cancelled by this sweep on the next
+  worker run.
+- **Editing near-miss (recorded for honesty)**: mid-implementation, an edit
+  REPLACED sweepExpiredOpenGroups instead of appending after it — caught by
+  reading the returned diff, restored immediately. The diff-read habit is
+  load-bearing; gates would have caught it, eyes caught it first.
 
 
 

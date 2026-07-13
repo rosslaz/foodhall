@@ -30,6 +30,7 @@ export async function runSweeps() {
   await sweepStuckTickets();
   await sweepStuckLockedGroups();
   await sweepExpiredOpenGroups();
+  await sweepStaleFiredGroups();
 }
 
 // A ticket is stuck when its group says "we're cooking" (SCHEDULED/FIRED) but
@@ -108,6 +109,45 @@ async function sweepExpiredOpenGroups() {
     if (updated.count > 0) {
       // warn, not error: expiry is expected housekeeping, not a failure.
       logger.warn({ groupId: g.id }, 'SWEEP: expired idle OPEN group');
+      await realtime.publish({ type: 'group.updated', groupId: g.id });
+    }
+  }
+}
+
+// Lifecycle expiry (backlog, 2026-07-12): a FIRED group whose targetReadyAt
+// is hours in the past is dead — the food was due long ago and nothing
+// advanced the tickets to READY (kitchen never bumped; vendor has no KDS;
+// diners walked). Without this, such groups poll GoTab every reconcile tick
+// FOREVER (observed: the 07-07 zombie group erroring for days). Expiry →
+// CANCELLED stops the polling and gives clients a terminal state. Tickets
+// still PENDING/FIRED are cancelled with it (our record of a long-dead
+// service window — whatever the kitchen physically did is hours-stale
+// history); READY/FAILED/CANCELLED tickets are already terminal.
+// warn-level like OPEN expiry: housekeeping, not a primary-mechanism failure
+// — though a PATTERN of these at a venue means a vendor's bump discipline or
+// KDS setup needs attention (questionnaire Q11–12 territory).
+// Exported for direct integration testing (sweeps.int.test.ts).
+export async function sweepStaleFiredGroups() {
+  const cutoff = new Date(Date.now() - config.GROUP_FIRED_EXPIRY_HOURS * 3_600_000);
+  const groups = await prisma.groupOrder.findMany({
+    where: { status: 'FIRED', targetReadyAt: { lte: cutoff } },
+    select: { id: true },
+    take: BATCH,
+  });
+  for (const g of groups) {
+    const updated = await prisma.groupOrder.updateMany({
+      where: { id: g.id, status: 'FIRED' },
+      data: { status: 'CANCELLED' },
+    });
+    if (updated.count > 0) {
+      await prisma.ticket.updateMany({
+        where: { groupId: g.id, status: { in: ['PENDING', 'FIRED'] } },
+        data: { status: 'CANCELLED' },
+      });
+      logger.warn(
+        { groupId: g.id },
+        'SWEEP: expired stale FIRED group (target long past, tickets never completed) — reconcile polling stops',
+      );
       await realtime.publish({ type: 'group.updated', groupId: g.id });
     }
   }
