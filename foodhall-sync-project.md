@@ -1837,6 +1837,32 @@ kitchen chimes in exactly N minutes → bump both as they'd finish → countdown
 hits Ready, group completes → show the telemetry row: "this number — the gap
 between your dishes — is what we minimize, and we measure it on every order."
 
+### FIELD RUN-SHEET — hotspot dry run 2026-07-12 (verified unless marked)
+- **Network shape (VERIFIED)**: iPhone Personal Hotspot; laptop joins it —
+  laptop's internet (GoTab API) rides the hotspot; docker is local. Server
+  already binds 0.0.0.0 (config default); one-time firewall rule is IN
+  ("FoodHall dev 3100", inbound 3100, Profile Any — persists).
+- **Hotspot HOST reaches the laptop's server (VERIFIED)** — the demo works
+  with two devices + Jon's. Startup log prints typeable LAN URLs (virtual
+  adapters name-filtered); iPhone-hotspot address ≈ http://172.20.10.x:3100.
+- **WebSocket over hotspot (VERIFIED)**: diner phone updates itself — no
+  refreshes. (2s auto-reconnect papers over blips.)
+- **PRE-DEMO RITUAL (the big lesson)**: from any phone on the hotspot, open
+  `/api/health` — must show "status":"ok" + worker.alive:true. Today's run
+  stalled on a not-restarted worker; the durable-jobs design self-recovered
+  the instant the worker started (M1 witnessed in the field — zero loss,
+  schedule re-anchored correctly), but the demo should never rely on the
+  recovery story. Ten seconds, checks both processes.
+- **Volume ritual**: iPhone ring/silent switch OFF-mute AND media volume up
+  (today's chime observation lost to mute).
+- **PENDING retest (volume up)**: (a) does the KDS chime fire while GoTops is
+  BACKGROUNDED (Safari in front), or only on foreground? If backgrounded =
+  deaf → staging rule: Ross's phone stays foregrounded on GoTops; Jon's phone
+  is the only diner (better choreography anyway). (b) chime audibility
+  outdoors.
+- Friction count this run: 5, all converted (worker→ritual, mute→ritual,
+  WSL-URL noise→code, firewall→done-once, which-URL→startup log).
+
 
 
 

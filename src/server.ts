@@ -1,4 +1,5 @@
 import { dirname, join } from 'node:path';
+import { networkInterfaces } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
@@ -72,6 +73,25 @@ async function main() {
   try {
     await app.listen({ port: config.PORT, host: config.HOST });
     logger.info(`Server listening on http://${config.HOST}:${config.PORT}`);
+    // FIELD/DEMO aid (2026-07-12): 0.0.0.0 is not a typeable URL. When bound
+    // to all interfaces, print the machine's real LAN addresses so "what do I
+    // open on the diner's phone" is answered by this log — hotspot IPs change
+    // between sessions, so this beats memorizing ipconfig output. (Reminder:
+    // Windows classifies hotspots as PUBLIC networks — an inbound firewall
+    // allow on the port, Profile Any, is required once; see project doc.)
+    if (config.HOST === '0.0.0.0') {
+      const ifaces = Object.entries(networkInterfaces());
+      // Hide virtual adapters (WSL/Hyper-V/Docker vEthernet) by NAME — their
+      // ranges overlap real hotspot ranges (both 172.16/12), so name is the
+      // only reliable discriminator. Fall back to unfiltered rather than
+      // printing nothing if the heuristic eats everything.
+      const physical = ifaces.filter(([name]) => !/vEthernet|WSL|Hyper-V|Docker|Loopback/i.test(name));
+      const pick = (physical.length > 0 ? physical : ifaces)
+        .flatMap(([, addrs]) => addrs ?? [])
+        .filter((i) => i.family === 'IPv4' && !i.internal)
+        .map((i) => `http://${i.address}:${config.PORT}`);
+      if (pick.length > 0) logger.info(`LAN URLs (diner devices): ${pick.join('  ')}`);
+    }
   } catch (err) {
     logger.error(err);
     process.exit(1);
