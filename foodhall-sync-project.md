@@ -1870,6 +1870,139 @@ between your dishes — is what we minimize, and we measure it on every order."
 
 ---
 
+## ZACH REPLY #4 — THE 2.3 ANSWER (2026-07-13, evening): Branch A CONFIRMED
+
+SDK docs: https://docs.gotab.io/guides/payment-sdk/ — deep-read is next work.
+
+1. **Branch A confirmed & specified**: GoTab owns card data + settlement end
+   to end; we never touch a PAN, never pick a processor, never move funds;
+   native per-vendor settlement. SDK = CDN bundle, global `PaymentsSDK`:
+   `initAddCardForm` (VGS tokenization, card-on-file, nothing charged at add
+   time), `fetchPaymentMethods`/`deletePaymentMethod`, `initApplePay`
+   (charges a SPECIFIC TAB, returns payments[] {gateway, payment_id,
+   processor_id}). We reference location + customer + tab.
+2. **Per-member payments minutes apart: YES** — open tab, each diner pays
+   their share against the tab's payments endpoint (or split-pay item
+   groups); each payment draws down the balance; **balance-zero = the
+   all-paid signal**. Maps 1:1 onto our state machine: markPaid() becomes
+   GoTab-payment-event driven; maybeSchedule gates on balance-zero. (openTab:
+   false single-payment close = not our case, confirmed.)
+3. **PARENT TAB (the structural gift)**: one tab at the parent location
+   carries items from multiple vendor children; diner pays ONCE; settlement
+   auto-splits natively per vendor merchant account. Kills the N-tabs-per-
+   group wrinkle. **Blocked on a sandbox config change Zach is chasing** —
+   he'll notify. His example payload gifts two NEW FIXTURES: parent spot
+   `spt_2NSYT~eQXy7_KdanHmB7nGs6`, Motor product
+   `prd_iJtCwBBrkOV7yRzlkP6FmSqf`.
+4. **Cancel: first-class** — tab cancel = full refund of every collected
+   payment (void vs refund per auth/capture), cross-vendor, nothing fires.
+   Finding #6/M3's design largely outsourced: GoTab reverses money, we
+   mirror state.
+5. **Zach's framing note = our architecture, endorsed**: "open tab, collect
+   per-member payments, you trigger the submit or fire once the balance is
+   zero and your 46ms timer says go." GoTab fires on SUBMISSION not payment;
+   scheduling stays optional/fallback. We-hold-timers + GoTab-owns-money is
+   the blessed shape.
+
+### THE UNSOLVED MECHANIC (the crux — do not celebrate as finished)
+His flow says "open the tab WITH the group's items" (balance must exist to
+pay against) — but we PROVED live that items on an open tab FIRE IMMEDIATELY
+(~200ms). All items at creation = everything fires at once = stagger dies.
+Something must hold items unfired until our timer releases them. Breadcrumb:
+the KDS settings' **"Show Held Orders"** toggle — held orders exist in
+GoTab's model. Candidate mechanics: (a) hold-then-release per vendor order,
+(b) pay-forward credit + staggered addTabItems waves, (c) split-pay item
+group semantics. ASKED ZACH DIRECTLY (reply finalized 07-14, sending 07-15
+morning) rather than
+probe-guessing. This question + parent-tab config = the Phase 2.3-B sandbox
+test plan:
+  1. His exact parent createTab payload — succeeds? items route to each
+     child's KDS?
+  2. THE sequencing mechanic — hold/release vs pay-forward waves.
+  3. Payments endpoint: partial per-member payments; observe balance
+     drawdown + the balance-zero moment (poll? tab read? webhook?).
+  4. Cancel a partially-paid parent tab → observe refunds.
+
+### What changes in the codebase (LATER — blocked on config + mechanic)
+Payment seam repoints from mock/Stripe-shape to GoTab tab observation;
+per-member payStatus correlates via SDK payment-success payloads; submission
+model possibly N-tabs → one parent tab (adapter-layer change, the seam holds).
+Nothing rebuilt until the sandbox answers land. Roadmap 2.3 DECISION:
+**Branch A resolved in principle; mechanics pending the sequencing answer.**
+
+### SDK DEEP-READ — 2026-07-14 (Payment SDK + GoTab Wallet guides, both read in full)
+
+Sources: docs.gotab.io/guides/payment-sdk/ + /guides/gotab-wallet/. Bundle:
+`https://sdk.gotab.io/payments-sdk.umd.js` → global `PaymentsSDK`.
+
+**THE SURFACE DECISION: initWallet is our product; ignore the other two.**
+- `initWallet(container, config)` — embedded iframe, the COMPLETE diner
+  experience: view/add/delete saved cards, pay via saved card, **Apple Pay
+  AND Google Pay** (Android covered), phone verification + session handled
+  inside the iframe. Config: clientApiAccessId/Secret, **tabUuid**,
+  **paymentSessionId (required)**, domainName, onPaymentSuccess; optional
+  paymentSessionToken + customerId (returning verified diner — future
+  repeat-visitor nicety), theme.
+- `initApplePay` — Safari-only, requires the location on the **Adyen**
+  gateway with a digital wallet key, HTTPS mandatory. Niche; superseded by
+  the Wallet for us.
+- `initAddCardForm` — VGS Collect direct form; save-only (no charge); needs
+  customerProfileUuid + locationUuid; and its documented behavior FETCHES
+  CONTEXT FROM *OUR* BACKEND (`/api/payment-methods/context/:uuid` on the
+  integrator's origin) — an integration cost the Wallet route avoids
+  entirely. Skip unless a bespoke card UI ever matters.
+
+**Payment success payload (identical on both charge surfaces):**
+`{ payments: [{ amount ¢, customer_fee ¢, gateway, payment_id,
+payment_type, processor_id }], tab_uuid, amount ¢ }`.
+
+**FOUR FINDINGS THE DOCS DON'T RESOLVE:**
+1. **paymentSessionId: required, undocumented.** "Authenticates wallet
+   operations" — provenance unknown; almost certainly minted server-side by
+   us against the tab (API-reference hunt → then Zach). PRIME SUSPECT for
+   per-member amounts (see 2).
+2. **No amount parameter anywhere.** Both payloads say "Tab total amount in
+   cents"; neither config takes an amount. Per-member shares therefore ride
+   on either (a) the payment session carrying an amount (mint a session for
+   THIS member's share → wallet charges exactly that), or (b) Zach's
+   "split-pay item groups, where each check carries its own balance" (each
+   member's check = its own payable identity). Q for Zach / sandbox probe.
+3. **clientApiAccessId/Secret = a SEPARATE CLIENT-TIER credential pair**
+   (designed to sit in page source; distinct from our server OAuth creds).
+   WE DON'T HAVE THEM — nothing wallet-shaped is testable until provisioned.
+   Lead-time ask for Zach (P.S. candidate on the 07-15 email).
+4. **customer_fee is real** ($0.32 on $6.90 in their example): our "your
+   total" UX must anticipate/display it, and who bears fees at DSC is now a
+   Jon-questionnaire + location-config question.
+
+**INTEGRATION SHAPE (v1 design, pending hold-vs-fire + parent config):**
+1. Lock → items onto the (parent) tab per whatever the sequencing answer is.
+2. Server mints a per-member payment session (amount = that member's share;
+   endpoint TBD) via our OAuth creds.
+3. Customer UI "Pay my share" mounts `initWallet(tabUuid, paymentSessionId)`
+   — diner pays by card/Apple/Google inside the iframe; first-timers do SMS
+   phone verification in-frame (GoTab-standard consumer flow; set
+   expectations for a group of 8 first-timers).
+4. **onPaymentSuccess is a UX SIGNAL, NEVER THE TRUTH**: the client notifies
+   our server → server VERIFIES the payment against the tab via REST/GraphQL
+   (payment_id match) before markPaid; the all-paid gate ALSO confirms
+   GoTab's tab balance = 0 (their ledger is the source of truth, ours is the
+   mirror). Reconcile-pattern, applied to money.
+5. Tab cancel → GoTab refunds all payments → our REFUNDED mirror (M3 lands
+   exactly here).
+6. HTTPS required for wallet surfaces → payment testing needs the deployed
+   (Phase 3) or tunneled environment; the 7/21 demo stays on mock payment,
+   unaffected.
+
+**Open-question ledger after the read:** (A) hold-vs-fire, (B)
+paymentSession minting endpoint, (C) per-member amount mechanics, (D)
+client-tier creds provisioning — A–D ALL in the 07-15 morning email to Zach
+(findings-first structure); (E) customer_fee
+policy at DSC — Jon + config; (F) does initWallet accept a PARENT-location
+tab — sandbox verify once config lands.
+
+---
+
 ## test:gotab (2.7) + stale-FIRED sweep — 2026-07-13 (both DONE, gates green)
 
 **Gate is now typecheck + 27 unit + 18 int** (9 lifecycle + 4 guards + 3
