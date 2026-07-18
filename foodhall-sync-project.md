@@ -2001,6 +2001,85 @@ client-tier creds provisioning — A–D ALL in the 07-15 morning email to Zach
 policy at DSC — Jon + config; (F) does initWallet accept a PARENT-location
 tab — sandbox verify once config lands.
 
+### ZACH REPLY #5 — 2026-07-15: ledger answers + hold-vs-fire early reads
+
+**Ledger updates:** Q-B CLOSED — mint endpoint is
+`POST /v2/loc/{location}/payment-sessions/{tab_uuid}` → `{ paymentSessionId,
+expires }`; authenticates as the API SOURCE (the client-tier creds), scoped
+to tab+customer, short-lived — mint right before presenting the wallet.
+Q-D in progress (sandbox client-creds provisioning; timeline coming). Q-C
+likely answer: **split-pay item groups** — each member's share is a group
+with its own balance targeted via `item_group_uuid`; session carries NO
+amount (auth handle only; charge settles against balance) — PENDING his
+confirmation of how it threads through the wallet iframe.
+
+**NEW SANDBOX FACTS:** parent-tab payload uses per-item
+`productLocationId` — Konjo 21091, **Motor 21092 (new)**; real parent spot
+`spt_WuYe_~57oErz~XrFizbJ9bdb` (tilde law). Config reads as live-or-imminent
+— our probe decides (below).
+
+**Hold-vs-fire, his early reads (NOT final — he's testing over the weekend):**
+1. Held orders: REAL but a coursing-engine byproduct; the KDS toggle is
+   visibility-only; release lives on KDS/POS, NOT API-drivable today. He's
+   raising API-exposed release internally — our question may become a GoTab
+   feature.
+2. Waves via addTabItems: **timing half WORKS** (each wave fires on our
+   call → stagger preserved). CATCH: **a payment cannot exceed the current
+   tab balance** — no collecting $20 against a $5 tab. His likely path:
+   **staggered payment — collect each wave's amount as its items land.**
+3. Split-pay groups: purely financial, don't gate firing — the per-member
+   money tool, not the firing lever.
+
+**⚠ THE INVARIANT TENSION (strategic — do not resolve casually):** staggered
+payment INVERTS pay-before-fire — waves settle as they land, so "all paid
+gates any firing" dies on that path. The candidate reframe: GoTab's own
+consumer open-tab model runs on **card-on-file + PRE-AUTHORIZATION** (their
+standard flow; operator docs on pre-auth exist). Our invariant could become
+**"nothing fires until every member has a card attached/authorized"** — the
+deadbeat protection pay-before-fire actually exists for — with waves
+settling as they land. Arguably better diner UX (nobody fronts money before
+food starts). DESIGN QUESTION, held open until Zach's weekend results.
+
+**The resurrection: `scheduledDate` + `openTab:false`** — platform holds
+prepaid orders and fires them itself; "the direction I'm most optimistic
+about." His caveats: appears to fire the WHOLE order at once, and scheduling
+wants a FRESH tab — so per-vendor stagger there needs per-order scheduling
+on one tab (the original June dream) or one scheduled tab per vendor
+(N prepaid tabs). Weekend testing decides.
+
+**Our move (same day): `scripts/probe-parent-tab.ts`** — RUN 2026-07-17
+evening, **CONFIG IS LIVE AND THE RESULT IS THE BEST SHAPE**: one parent tab
+(`4Y1Ui8PnSRYGF70NGPocqst5`, tabId 80385326, single consolidated $15.00
+balanceDue) → GoTab AUTO-SPLIT items into **one order PER child location**
+(134847262 → Motor, 134847263 → Konjo), both fired ASAP (pipelines 0.20s /
+0.09s), and **BOTH KDS SCREENS LIT UP** — PC Konjo + iPhone Motor, from one
+API call. Ticket ↔ order stays 1:1 per vendor; the adapter mapping barely
+changes; diner-pays-once confirmed financially by the single balance. Also
+discovered: create response includes `href` (gotab.io/.{tabUuid}) — GoTab's
+own consumer payment page for the tab = a zero-code fallback payment path
+alongside the Wallet SDK. June's founding assumption ("one shared tab,
+multiple per-vendor orders") live-confirmed at last, minus scheduling.
+Remaining fire-side unknown: do addTabItems WAVES appended later create
+fresh per-location orders (the stagger mechanism)? → probe #2
+(`probe-parent-waves.ts`). Settle pile +1 parent tab.
+
+**PROBE #2 RESULT (same evening): WAVES WORK — FIRE SIDE COMPLETELY
+PROVEN.** Discovered append shape (error-driven, one iteration — bare
+`{items}` → 400 "Spot not found", the endpoint asking for its missing
+field): **`POST /api/loc/{parent}/tabs/{tabUuid}/items` with body
+`{ spotUuid, items:[{productUuid, quantity, externalId,
+productLocationId}] }`** — NEW ADAPTER LAW. Run: tab created with only
+Motor's item (order 134849135 → Motor KDS chimed T+0) → 60s gap held by us
+→ append Konjo item → **NEW per-location order 134849381 → KONJO child,
+fired ASAP 0.24s** — wave = fresh order at the right kitchen, on OUR
+timing. Also confirmed: GraphQL mutation root exposes only goGet* at our
+tier — REST is the entire write surface. Consequence: the full stagger
+architecture maps onto ONE parent tab (create at first wave or at lock;
+append per vendor at fire time); adapter change is modest, behind the
+existing seam. **Only payment mechanics remain (Zach's weekend): the
+balance-cap/invariant question + split-pay-through-wallet + client creds.**
+Settle pile +2 parent tabs tonight. Results email → Zach same night.
+
 ---
 
 ## test:gotab (2.7) + stale-FIRED sweep — 2026-07-13 (both DONE, gates green)
