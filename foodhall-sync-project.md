@@ -2122,7 +2122,21 @@ creation, never at verification).
   in getTicketStatus as defense-in-depth.
 - Standing Phase 3 items unchanged: CORS origin lock, helmet, TLS, pino
   redaction config, fast-jwt advisory triage (post-POC migration).
-- Hygiene check owed: `git check-ignore .env` (confirm never committed).
+- Hygiene check owed: `git check-ignore .env` (confirm never committed) —
+  VERIFIED same night (prints .env).
+
+**FOLLOW-UP (same night): mock vendors removed from default seed.** Under
+gotab mode the seeded fakes were UI dead ends (fake gotabLocationId strings
+that look connected; unmapped items render orderable and 400 on tap — H1
+stops the fire failure, not the bad demo). Seed now creates hall + admin
+ONLY; mock roster behind `SEED_MOCK_VENDORS=true` (mock-adapter dev loop).
+DEMO DB REBUILD FLOW (run before the outdoor rehearsal so it rehearses
+Tuesday's exact state): processes off → `npx prisma migrate reset --force`
+(wipes dev DB — showcase telemetry rows gone, numbers preserved in this
+doc) → `npm run seed` → import Konjo + Motor via admin → set prep times
+(Konjo 3min / Motor 8min; imports arrive unconfirmed → H2 guard forces
+honest config, exactly the DSC onboarding flow) → one two-vendor smoke
+group.
 
 ---
 

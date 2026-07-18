@@ -18,7 +18,14 @@ async function main() {
     data: { email: 'admin@foodhall.test', passwordHash: hashPassword('admin1234'), role: 'ADMIN' },
   });
 
-  const vendors = [
+  // Mock vendors are OPT-IN (review follow-up, 2026-07-18): real deployments
+  // onboard vendors via GoTab import, and under VENDOR_ADAPTER=gotab these
+  // fabricated vendors are landmines — fake gotabLocationId strings that look
+  // "connected", items with no product mapping that render orderable and 400
+  // on tap (the H1 guards stop the fire failure, not the UI dead end). Set
+  // SEED_MOCK_VENDORS=true for the mock-adapter dev loop.
+  const seedMocks = process.env.SEED_MOCK_VENDORS === 'true';
+  const vendors = seedMocks ? [
     {
       name: 'Smash Burgers',
       items: [
@@ -51,7 +58,7 @@ async function main() {
         { name: 'Spring Rolls', priceCents: 600, prepSeconds: 240 },
       ],
     },
-  ];
+  ] : [];
 
   for (const v of vendors) {
     await prisma.vendor.create({
@@ -67,7 +74,11 @@ async function main() {
   console.log('Seeded:');
   console.log('  Food hall:', hall.name, `(${hall.id})`);
   console.log('  Admin login: admin@foodhall.test / admin1234');
-  console.log('  Vendors:', vendors.map((v) => v.name).join(', '));
+  console.log(
+    seedMocks
+      ? `  Vendors (mock): ${vendors.map((v) => v.name).join(', ')}`
+      : '  Vendors: none — import real ones via the admin UI (SEED_MOCK_VENDORS=true for mocks)',
+  );
 }
 
 main()
