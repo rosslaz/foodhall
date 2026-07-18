@@ -32,12 +32,29 @@ export interface ScheduleGroupJob {
 // keeps `npm run typecheck` green regardless of node_modules layout.
 const connection = makeRedis() as unknown as ConnectionOptions;
 
-export const fireTicketQueue = new Queue<FireTicketJob>('fireTicket', { connection });
+// RETENTION (leak review #6, 2026-07-18): BullMQ's DEFAULT keeps completed
+// and failed jobs in Redis FOREVER — every payment/ticket/group adds
+// permanent records, unbounded, surviving restarts (Redis persistence makes
+// this a storage leak, not a process one). Keep a debugging window instead:
+// completed jobs for 24h (capped), failures for a week (the sweeps and
+// SWEEP: alerts reference them forensically). Queue-level defaults apply to
+// every add unless a call site overrides.
+const defaultJobOptions = {
+  removeOnComplete: { age: 24 * 3600, count: 1000 },
+  removeOnFail: { age: 7 * 24 * 3600, count: 5000 },
+};
+
+export const fireTicketQueue = new Queue<FireTicketJob>('fireTicket', {
+  connection,
+  defaultJobOptions,
+});
 export const paymentTimeoutQueue = new Queue<PaymentTimeoutJob>('paymentTimeout', {
   connection,
+  defaultJobOptions,
 });
 export const scheduleGroupQueue = new Queue<ScheduleGroupJob>('scheduleGroup', {
   connection,
+  defaultJobOptions,
 });
 
 export const QUEUE_NAMES = {

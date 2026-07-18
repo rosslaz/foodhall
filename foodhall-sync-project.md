@@ -2082,6 +2082,31 @@ Settle pile +2 parent tabs tonight. Results email → Zach same night.
 
 ---
 
+## LEAK REVIEW #6 — 2026-07-18 (long-running process + Redis retention)
+
+Fresh reads: queues.ts, broker.ts, realtime.routes.ts (+ week's in-context).
+
+**CLEAN — WebSocket registry**: subscribe() returns unsubscribe;
+`socket.on('close')` removes from the Set; readyState-guarded sends. The 2s
+reconnect loop cannot accumulate dead handlers. Also clean: worker intervals
+(fixed count, overlap-guarded), spot cache (bounded by location count),
+pacing gate (single number), auth cache (single token), frontend countdown
+(clearInterval before recreate). ScheduleOutcome growth = the product, not a
+leak.
+
+**FIXED — BullMQ retention (the finding)**: no removeOnComplete/removeOnFail
+anywhere → BullMQ default kept EVERY completed+failed job in Redis FOREVER —
+unbounded storage leak, restart-surviving, compounding under Phase 3's
+persisted managed Redis. Now queue-level defaultJobOptions: completed 24h /
+1000-cap; failed 7d / 5000-cap (forensic window for SWEEP: alerts).
+Single-point fix in queues.ts; per-add attempts/backoff untouched.
+
+**DECIDED — submittedByTicket map (L3)**: real, tiny (~entry/ticket,
+restart-cleared). Bounded cap folds into the imminent parent-tab adapter
+rework, which rewrites submitTicket regardless — no blind edit tonight.
+
+---
+
 ## SECURITY REVIEW #5 — 2026-07-18 (auth surface, realtime, infra bindings)
 
 Fresh reads: auth.routes, payments.routes, broker, docker-compose,
