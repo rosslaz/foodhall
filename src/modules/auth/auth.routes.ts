@@ -20,6 +20,14 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+// Bootstrap CREATES the admin account, so it enforces a minimum password
+// policy — unlike login, which correctly accepts anything (never enforce
+// policy at verification time; review #5). min(1) on login stays.
+const bootstrapSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8, 'Admin password must be at least 8 characters'),
+});
+
 // Require a valid JWT; optionally require a specific role.
 export function requireAuth(role?: 'ADMIN' | 'VENDOR') {
   return async (req: FastifyRequest, _reply: FastifyReply) => {
@@ -64,7 +72,7 @@ export async function authRoutes(app: FastifyInstance) {
     async (req, reply) => {
     const existing = await prisma.user.count({ where: { role: 'ADMIN' } });
     if (existing > 0) throw forbidden('Admin already exists');
-    const { email, password } = loginSchema.parse(req.body);
+    const { email, password } = bootstrapSchema.parse(req.body);
     const user = await prisma.user.create({
       data: { email, passwordHash: hashPassword(password), role: 'ADMIN' },
     });

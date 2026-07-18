@@ -1,5 +1,12 @@
 # Local infra for development: Postgres + Redis.
 # Start with: docker compose up -d
+# SECURITY (review #5, 2026-07-18): ports are bound to 127.0.0.1 explicitly.
+# Bare "5432:5432" binds ALL interfaces, and Docker Desktop adds its own
+# Windows-firewall allowances — on a shared network (demo hotspot!) that
+# exposed Postgres (foodhall/foodhall) and UNAUTHENTICATED Redis to every
+# peer. Loopback-only costs nothing: the app connects via localhost.
+# NOTE: takes effect on container RECREATE: docker compose down; docker
+# compose up -d   (pgdata is a named volume — data survives `down`).
 services:
   postgres:
     image: postgres:16-alpine
@@ -7,10 +14,10 @@ services:
       POSTGRES_USER: foodhall
       POSTGRES_PASSWORD: foodhall
       POSTGRES_DB: foodhall
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:5432:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    ports: ["127.0.0.1:6379:6379"]
 volumes:
   pgdata:

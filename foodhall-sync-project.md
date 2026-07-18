@@ -2082,6 +2082,50 @@ Settle pile +2 parent tabs tonight. Results email → Zach same night.
 
 ---
 
+## SECURITY REVIEW #5 — 2026-07-18 (auth surface, realtime, infra bindings)
+
+Fresh reads: auth.routes, payments.routes, broker, docker-compose,
+groups.routes (+ this week's in-context reads of everything else).
+
+**VERIFIED STRONG:** member tokens nanoid-32/36-alphabet (~165 bits), owner-
+only return, memberPublicSelect + S5 schemas; ALL IDOR checks hold (add-item
+group check, delete ownership, lock host-only, payments token-scoped); join
+codes ~1.07B space behind 60/min/IP; bootstrap-admin gated on
+existing-admin; login: generic error (no enumeration), rate-limited, 12h
+JWT; no injection (Prisma parameterized; raw SQL = test truncation only);
+request logs exclude headers → tokens never logged.
+
+**S1 FIXED — docker-compose bound PG+Redis on ALL interfaces**: Docker
+Desktop adds its own firewall allowances, so on any shared network (THE DEMO
+HOTSPOT) every peer could reach Postgres (foodhall/foodhall) and
+UNAUTHENTICATED Redis — full DB read/write; queue/heartbeat forgery via
+Redis. Now `127.0.0.1:` prefixed. Takes effect on container RECREATE:
+`docker compose down; docker compose up -d` (pgdata named volume survives).
+ADD TO PRE-DEMO RITUAL: recreate containers before Tuesday.
+
+**S5 FIXED — bootstrap accepted 1-char admin passwords** (reused
+loginSchema). Split: bootstrapSchema min(8); login stays min(1) (policy at
+creation, never at verification).
+
+**ACCEPTED / NOTED (no change):**
+- S2 group READ authorization = possession of the v4 uuid (unguessable;
+  consistent with the deliberately-public board feed; shared group links
+  granting view access is a feature). Recorded as design, not hole.
+- S3 WebSocket subscribe unauthenticated — events carry ids+status only,
+  consistent with S2. Phase 3 note: ws upgrades bypass the rate-limit
+  plugin → unbounded connections = socket-exhaustion vector at venue scale;
+  add a connection cap or heartbeat cull at deploy.
+- S4 bootstrap TOCTOU (two concurrent first-bootstraps → two admins) —
+  academic: setup precedes public exposure.
+- S7 adapter GraphQL inline-interpolates orderId (ids originate from GoTab's
+  numeric extraction + our DB) — cleanup-ledger item: explicit /^\d+$/ guard
+  in getTicketStatus as defense-in-depth.
+- Standing Phase 3 items unchanged: CORS origin lock, helmet, TLS, pino
+  redaction config, fast-jwt advisory triage (post-POC migration).
+- Hygiene check owed: `git check-ignore .env` (confirm never committed).
+
+---
+
 ## CODE REVIEW #4 — 2026-07-17 (dead/redundant lens, fresh file reads)
 
 Scope: types/index/mock adapters, status.service, config, tsconfig, customer
