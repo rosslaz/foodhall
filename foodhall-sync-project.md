@@ -2082,6 +2082,51 @@ Settle pile +2 parent tabs tonight. Results email → Zach same night.
 
 ---
 
+## CODE REVIEW #4 — 2026-07-17 (dead/redundant lens, fresh file reads)
+
+Scope: types/index/mock adapters, status.service, config, tsconfig, customer
+html (in-context). One real bug + three classifications.
+
+**BUG — FIXED same day**: `markTicketReady`'s group-COMPLETED write was the
+ONE unconditional status transition in the system (plain `update`, no status
+guard) — latent CANCELLED→COMPLETED resurrection. Today unreachable-harmful
+(a FAILED sibling always keeps `remaining > 0` on cancelled groups — traced
+all paths) but that safety was accidental. Now conditional
+`updateMany(status IN [SCHEDULED, FIRED])` with telemetry/publish gated on
+count, matching the codebase law. Gates GREEN same night (27 unit + 18 int
+— happy path completes THROUGH the new guard; blast patterns hold).
+
+**DEAD (delete on Ross's go)**: `resolveHall()` empty stub in
+customer/index.html (never called; batch with next full-file frontend
+rewrite per law); `scripts/probe-adapter-submit.ts` (superseded by
+test:gotab) + era-complete probes (epoch / open-tab / order-poll).
+
+**DORMANT — DELIBERATELY KEPT**: the ENTIRE holdsSchedule machinery (flag,
+SCHEDULED status, mock future-scheduledFor honoring, reconcile
+platform-holding branch, maybeSchedule submit-at-once path, redrive markFired
+flag). Unreachable today (both adapters false) — but it IS the
+implementation of Zach's scheduledDate+openTab:false path ("the direction
+I'm most optimistic about"). Do not delete next month's architecture.
+
+**REDUNDANT — post-POC cleanup ledger**: legacy GOTAB_API_KEY/SECRET
+fallbacks (config + both factories + auth + conformance hasCreds — one
+commit once .env rename confirmed); half-alive TicketStatus.IN_PROGRESS
+(set by nothing, guarded-for in markTicketReady only — resolve one
+direction; known Phase-5 leftover); SubmitTicketResult.acceptedAt +
+estimatedReadyAt computed by both adapters, consumed by NOTHING (trim or
+feed telemetry).
+
+**META**: tsconfig lacks noUnusedLocals/noUnusedParameters — the compiler
+isn't policing dead code (why it accumulates; why vendors.routes may carry
+stray post-M2 imports unverified). Adding both flags = the structural fix;
+scheduled post-7/21 to keep demo week churn-free.
+
+**Verified alive**: import-adapter dual instance, mock restart-READY,
+blankToUndef, sweep family ×4, provisional-vs-anchor double schedule,
+estimator seam.
+
+---
+
 ## test:gotab (2.7) + stale-FIRED sweep — 2026-07-13 (both DONE, gates green)
 
 **Gate is now typecheck + 27 unit + 18 int** (9 lifecycle + 4 guards + 3

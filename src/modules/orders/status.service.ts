@@ -56,13 +56,21 @@ export async function markTicketReady(ticketId: string) {
     where: { groupId: ticket.groupId, status: { notIn: ['READY', 'CANCELLED'] } },
   });
   if (remaining === 0) {
-    await prisma.groupOrder.update({
-      where: { id: ticket.groupId },
+    // Conditional like every other transition (review #4, 2026-07-17): this
+    // was the ONE unconditional status write in the system. Today no path
+    // reaches remaining===0 on a CANCELLED group (a FAILED sibling always
+    // counts as remaining), but that safety was accidental — one refactor
+    // from a CANCELLED→COMPLETED resurrection. Guard on the states that can
+    // legitimately complete.
+    const completed = await prisma.groupOrder.updateMany({
+      where: { id: ticket.groupId, status: { in: ['SCHEDULED', 'FIRED'] } },
       data: { status: 'COMPLETED' },
     });
-    await finalizeScheduleOutcome(ticket.groupId);
-    await realtime.publish({ type: 'group.updated', groupId: ticket.groupId });
-    logger.info({ groupId: ticket.groupId }, 'group completed');
+    if (completed.count > 0) {
+      await finalizeScheduleOutcome(ticket.groupId);
+      await realtime.publish({ type: 'group.updated', groupId: ticket.groupId });
+      logger.info({ groupId: ticket.groupId }, 'group completed');
+    }
   }
 }
 
