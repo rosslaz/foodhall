@@ -5,6 +5,19 @@
 about how DSC actually runs; Jon's answers are decision inputs, not color.
 Record every answer back into `foodhall-sync-project.md` after the meeting.
 
+**UPDATED 2026-07-18** after Zach replies #4–#5 + the parent-tab probes:
+Branch A is CONFIRMED platform-side (GoTab owns payment end to end; parent
+tab spans vendors; settlement splits natively) — §5 rewritten from "does
+this work" to "how does DSC specifically run it." Q15 removed (premise
+extinct), Q21 replaced (answered → new production-parity question), Q22b/24b
+added (fee policy; card-on-file model — Jon is a design input on the open
+pay-before-fire question).
+
+**🏕 CAMP CUT:** 7/21 is a soccer sideline, not a conference room. 🏕-marked
+questions are the ones to actually ask Tuesday; everything else is the
+agenda for the real DSC walkthrough the demo should win. Best outcome of
+camp = the demo lands + a date for that walkthrough.
+
 **Scope discipline:** these are OPERATOR questions. API/platform questions
 (settlement path, `scheduled` semantics, webhooks) belong to Zach at GoTab —
 deliberately excluded here so the meeting stays on Jon's turf. The one
@@ -21,11 +34,11 @@ written or specced.
 *Why: the pitch is "meaningfully better synchronization" — we need his number
 for what "better" beats, and 4.1 requires a manual baseline before launch.*
 
-1. When a group of 4–6 orders from multiple stalls tonight, what's your gut
+1. 🏕 When a group of 4–6 orders from multiple stalls tonight, what's your gut
    estimate of the gap between the first dish landing and the last?
    > 
 
-2. ⭐ Can we time 5–10 real group orders (first-dish-to-last-dish spread)
+2. ⭐🏕 Can we time 5–10 real group orders (first-dish-to-last-dish spread)
    during a normal service before the pilot? Who on your staff could help?
    > 
 
@@ -78,8 +91,12 @@ who moves the food.*
     stall works sequentially, that's a per-vendor setting we need.)
     > 
 
-11. ⭐ Which vendors run a GoTab KDS screen vs printed tickets vs something
-    else? (Our timing telemetry only exists for kitchens that BUMP tickets.)
+11. ⭐ Which vendors run a GoTab KDS vs printed tickets vs something else —
+    and for KDS vendors, what's the STATION setup? (Learned in sandbox:
+    "done" only registers when an EXPO/fulfill step completes; a prep-tap on
+    a single-station screen never produces the completion timestamp our
+    timing telemetry eats. So the real question per vendor: is there an expo
+    step, and who performs it?)
     > 
 
 12. ⭐ For KDS vendors: how honest is the bump? Bumped the moment food's in
@@ -98,10 +115,12 @@ who moves the food.*
     time stays flat? Gut feel per vendor is fine.
     > 
 
-15. If a delayed/scheduled ticket appeared on a KDS ("don't start until
-    7:42"), would kitchens respect it — or start it the moment they see it?
-    Have they ever handled scheduled orders (catering, online pickup)?
-    > 
+15. ~~If a delayed/scheduled ticket appeared on a KDS ("don't start until
+    7:42"), would kitchens respect it?~~ **REMOVED 2026-07-18** — premise
+    extinct: in every surviving architecture (our timed waves, or GoTab-held
+    scheduledDate), the kitchen only ever sees a ticket AT fire time, as a
+    normal ASAP order. Kitchens never need to "respect" anything.
+    > n/a
 
 16. Who at each vendor would notice/complain if ticket timing changed? Is
     there a vendor whose head cook we should talk to directly?
@@ -128,30 +147,60 @@ practice, so this data has to come from humans.*
 
 ## 5. Payments & tabs
 
-*Why: our recorded decision is Branch A — GoTab owns payment on a shared tab,
-our app never touches money. That only works if shared tabs work at DSC the
-way we think.*
+*Why (REWRITTEN 2026-07-18): the platform questions are ANSWERED — GoTab
+owns payment end to end, one parent tab spans vendors, settlement splits
+natively per vendor, cancel = full refund (Zach #4–#5 + our live parent-tab
+probes). What remains is how DSC's diners, staff, and account specifically
+run it — plus two policy questions the SDK read surfaced, and one design
+fork where Jon's instinct is a genuine input.*
 
 20. ⭐ How does a group pay today — separate transactions at each stall, or
-    do shared/open tabs across vendors actually get used at DSC?
+    do diners already use GoTab's QR/tab flow at tables? (This is now an
+    ADOPTION question: if DSC guests already know GoTab's phone flow —
+    verification, saved cards, wallet — our payment surface is familiar
+    territory; if they pay at counters, the first-time flow is new friction
+    to plan for.)
     > 
 
-21. ⭐ When one tab spans multiple vendors + the bar, how does the money
-    split to each vendor's account — automatic in GoTab, or DSC does
-    accounting? Any friction we'd inherit by driving orders onto one tab?
+21. ⭐ **Production parity** (replaces the answered settlement question): the
+    sandbox needed GoTab to enable a parent-location multi-vendor config for
+    one-tab-across-vendors to work. Is DSC's REAL GoTab account structured
+    as parent + child vendor locations — and who signs off on GoTab making
+    that config change in production: you, each vendor, or corporate?
     > 
 
 22. Tipping: per-vendor norms? Would a shared tab change how tips route, and
-    would vendors care?
+    would vendors care? (GoTab tabs carry a tipped subtotal — the mechanics
+    exist; this is a policy/culture question.)
+    > 
+
+22b. ⭐ **Fees**: GoTab payments can carry a customer-facing processing fee
+    per payment (we've seen it in their payloads). What happens at DSC today
+    — do diners see a fee line on GoTab orders, is it absorbed, and what
+    would you want in a group order: fee shown per member, or hidden in
+    prices?
     > 
 
 23. What happens today when someone walks away without settling? (Our app
     drops unpaid members' food after a timeout — see next question.)
     > 
 
-24. ⭐ Social check: if one person in a group hasn't paid after ~4 minutes,
-    our system drops their items and fires the rest of the group's food.
-    Reasonable at DSC, or does that create a scene? Better timeout length?
+24. ⭐ Social check: if one person in a group hasn't paid (or committed a
+    card — see 24b) after ~4 minutes, our system drops their items and fires
+    the rest of the group's food. Reasonable at DSC, or does that create a
+    scene? Better timeout length?
+    > 
+
+24b. ⭐ **The model question — your instinct genuinely decides design here.**
+    Two ways a group can commit before food fires:
+    (a) everyone PAYS their share up front, then food fires;
+    (b) everyone ATTACHES A CARD up front (like opening a bar tab), food
+        fires on schedule, and each person's charge lands as their food
+        goes in.
+    (b) is how GoTab tabs natively behave and nobody fronts money before
+    cooking starts — but it means charges land during the meal, not before.
+    Which fits food-hall groups socially? Which causes fewer scenes when
+    someone's card declines?
     > 
 
 25. Is a ~2-minute window between first and last dish "together enough" in
@@ -164,7 +213,7 @@ way we think.*
 *Why: 4.1/4.2 require these agreed BEFORE launch — thresholds negotiated
 after launch always get negotiated downward.*
 
-26. ⭐ Which 2–3 vendors would you pick for a weeknight soft launch — who's
+26. ⭐🏕 Which 2–3 vendors would you pick for a weeknight soft launch — who's
     enthusiastic, who's resistant, who has the most reliable kitchen?
     > 
 
@@ -172,7 +221,7 @@ after launch always get negotiated downward.*
     first?
     > 
 
-28. What would make YOU call this a success after 4–8 weeks? (Our proposals:
+28. 🏕 What would make YOU call this a success after 4–8 weeks? (Our proposals:
     median spread ≤ 2 min, beats the manual baseline meaningfully, zero
     "table never fed" incidents, adoption trending up. What's yours —
     covers-per-night? Vendor happiness? Reviews?)
@@ -182,16 +231,18 @@ after launch always get negotiated downward.*
     something looks off, and who texts us?
     > 
 
-30. What's the worst thing this could do to your operation? (We want his
+30. 🏕 What's the worst thing this could do to your operation? (We want his
     nightmare scenario on record — it becomes a runbook entry.)
     > 
 
 ## 7. Business & authorization
 
-31. ⭐ Production GoTab access: the POC runs against a sandbox today. Going
-    live at DSC needs an API integration authorized on DSC's REAL GoTab
-    account — is that a Jon decision, a GoTab-rep conversation, or both? Any
-    ownership/franchise complication?
+31. ⭐🏕 Production go-live needs THREE things on DSC's real GoTab account,
+    all learned from the sandbox: (a) the API integration authorized, (b)
+    the parent-location multi-vendor config enabled (GoTab had to switch
+    this on for our sandbox), (c) client-side payment credentials for the
+    wallet. Is authorizing that a Jon decision, a GoTab-rep conversation, or
+    both? Any ownership/franchise complication?
     > 
 
 32. Are there other DSC systems in play we haven't heard of (loyalty,
@@ -224,5 +275,9 @@ after launch always get negotiated downward.*
   design already tolerates missing data — but we should KNOW, not infer).
 - Q13 may demote the availability sync from "trustworthy" to "best effort" —
   document either way.
-- Q20–21 confirm or kill Branch A assumptions before the Zach conversation.
+- Q21 (production parity) + Q31 together define the go-live checklist with
+  GoTab — fold into the Zach thread once answered.
+- Q22b + Q24b feed the open pay-before-fire invariant decision alongside
+  Zach's weekend payment findings — do not resolve the invariant before both
+  inputs exist.
 - Q28's thresholds go into roadmap 4.2 verbatim.
