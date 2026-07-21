@@ -13,10 +13,18 @@ extinct), Q21 replaced (answered → new production-parity question), Q22b/24b
 added (fee policy; card-on-file model — Jon is a design input on the open
 pay-before-fire question).
 
-**🏕 CAMP CUT:** 7/21 is a soccer sideline, not a conference room. 🏕-marked
-questions are the ones to actually ask Tuesday; everything else is the
-agenda for the real DSC walkthrough the demo should win. Best outcome of
-camp = the demo lands + a date for that walkthrough.
+**UPDATED 2026-07-19** after Zach #6: the payment MODEL is decided by
+platform physics (balance-zero auto-closes the tab → pay-up-front cannot
+coexist with waves) — card-on-file commit + settle-at-end is the design.
+Q24b reframed to social validation; Q23 promoted ⭐ (DSC already lives with
+open-tab decline risk — Jon has OUR risk data); camp questions grouped into
+their own section below.
+
+**🏕 CAMP CUT:** 7/21 is a soccer sideline, not a conference room. The seven
+questions to actually ask Tuesday are grouped in the CAMP section directly
+below — in conversation order. Everything after that is the agenda for the
+real DSC walkthrough the demo should win. Best outcome of camp = the demo
+lands + a date for that walkthrough.
 
 **Scope discipline:** these are OPERATOR questions. API/platform questions
 (settlement path, `scheduled` semantics, webhooks) belong to Zach at GoTab —
@@ -29,10 +37,12 @@ written or specced.
 
 ---
 
-## 1. The problem & the baseline
+## 🏕 CAMP QUESTIONS — Tuesday's seven, in conversation order
 
-*Why: the pitch is "meaningfully better synchronization" — we need his number
-for what "better" beats, and 4.1 requires a manual baseline before launch.*
+*Numbers preserved from their home sections (cross-references below still
+resolve). Flow: observation → permission → picks → success → nightmare →
+the payment model → authorization. If only three get asked, make them 2, 26,
+and 31.*
 
 1. 🏕 When a group of 4–6 orders from multiple stalls tonight, what's your gut
    estimate of the gap between the first dish landing and the last?
@@ -41,6 +51,45 @@ for what "better" beats, and 4.1 requires a manual baseline before launch.*
 2. ⭐🏕 Can we time 5–10 real group orders (first-dish-to-last-dish spread)
    during a normal service before the pilot? Who on your staff could help?
    > 
+
+26. ⭐🏕 Which 2–3 vendors would you pick for a weeknight soft launch — who's
+    enthusiastic, who's resistant, who has the most reliable kitchen?
+    > 
+
+28. 🏕 What would make YOU call this a success after 4–8 weeks? (Our proposals:
+    median spread ≤ 2 min, beats the manual baseline meaningfully, zero
+    "table never fed" incidents, adoption trending up. What's yours —
+    covers-per-night? Vendor happiness? Reviews?)
+    > 
+
+30. 🏕 What's the worst thing this could do to your operation? (We want his
+    nightmare scenario on record — it becomes a runbook entry.)
+    > 
+
+24b. ⭐🏕 **The model check** (platform physics decided this — see §5
+    preamble). The model we're building: everyone ATTACHES A CARD up front
+    (like opening a bar tab, no money moves), food fires on schedule, and
+    each person's share is charged once at the end of the meal. Social
+    validation: does that fit food-hall groups? Anything about DSC's crowd
+    that makes card-on-file-then-charge-later a problem (declines, trust,
+    regulars vs tourists)?
+    > 
+
+31. ⭐🏕 Production go-live needs THREE things on DSC's real GoTab account,
+    all learned from the sandbox: (a) the API integration authorized, (b)
+    the parent-location multi-vendor config enabled (GoTab had to switch
+    this on for our sandbox), (c) client-side payment credentials for the
+    wallet. Is authorizing that a Jon decision, a GoTab-rep conversation, or
+    both? Any ownership/franchise complication?
+    > 
+
+---
+
+## 1. The problem & the baseline
+
+*Why: the pitch is "meaningfully better synchronization" — we need his number
+for what "better" beats, and 4.1 requires a manual baseline before launch.
+Q1–2 moved to the camp section.*
 
 3. Do diners actually complain about this, or is it a problem you observe but
    they tolerate? What do they say?
@@ -159,7 +208,8 @@ fork where Jon's instinct is a genuine input.*
     ADOPTION question: if DSC guests already know GoTab's phone flow —
     verification, saved cards, wallet — our payment surface is familiar
     territory; if they pay at counters, the first-time flow is new friction
-    to plan for.)
+    to plan for. Our commit step is literally "add a card to a GoTab
+    wallet" — guests who already run tabs have done it.)
     > 
 
 21. ⭐ **Production parity** (replaces the answered settlement question): the
@@ -181,26 +231,19 @@ fork where Jon's instinct is a genuine input.*
     prices?
     > 
 
-23. What happens today when someone walks away without settling? (Our app
-    drops unpaid members' food after a timeout — see next question.)
+23. ⭐ **PROMOTED 07-19 — Jon has OUR risk data.** DSC already runs GoTab
+    open tabs, which is exactly the "open-but-unsecured" exposure our
+    settle-at-end model carries: a card can decline (or someone walks) when
+    the tab finally charges. So: how often does that actually happen at DSC
+    today, what do staff do about it, and is the loss rate something you
+    shrug at or fight? (His answer calibrates our decline-handling design —
+    see Q24 for our timeout behavior.)
     > 
 
-24. ⭐ Social check: if one person in a group hasn't paid (or committed a
-    card — see 24b) after ~4 minutes, our system drops their items and fires
-    the rest of the group's food. Reasonable at DSC, or does that create a
-    scene? Better timeout length?
-    > 
-
-24b. ⭐ **The model question — your instinct genuinely decides design here.**
-    Two ways a group can commit before food fires:
-    (a) everyone PAYS their share up front, then food fires;
-    (b) everyone ATTACHES A CARD up front (like opening a bar tab), food
-        fires on schedule, and each person's charge lands as their food
-        goes in.
-    (b) is how GoTab tabs natively behave and nobody fronts money before
-    cooking starts — but it means charges land during the meal, not before.
-    Which fits food-hall groups socially? Which causes fewer scenes when
-    someone's card declines?
+24. ⭐ Social check: if one person in a group hasn't committed a card (camp
+    Q24b) after ~4 minutes, our system drops their items and fires the rest
+    of the group's food. Reasonable at DSC, or does that create a scene?
+    Better timeout length?
     > 
 
 25. Is a ~2-minute window between first and last dish "together enough" in
@@ -211,39 +254,24 @@ fork where Jon's instinct is a genuine input.*
 ## 6. Pilot design & success
 
 *Why: 4.1/4.2 require these agreed BEFORE launch — thresholds negotiated
-after launch always get negotiated downward.*
-
-26. ⭐🏕 Which 2–3 vendors would you pick for a weeknight soft launch — who's
-    enthusiastic, who's resistant, who has the most reliable kitchen?
-    > 
+after launch always get negotiated downward. Q26/28/30 moved to the camp
+section.*
 
 27. Which weeknight is right for a soft launch, and which tables get QR codes
     first?
     > 
 
-28. 🏕 What would make YOU call this a success after 4–8 weeks? (Our proposals:
-    median spread ≤ 2 min, beats the manual baseline meaningfully, zero
-    "table never fed" incidents, adoption trending up. What's yours —
-    covers-per-night? Vendor happiness? Reviews?)
-    > 
+28. → camp section.
 
 29. Who's the point person during pilot service — who do we text when
     something looks off, and who texts us?
     > 
 
-30. 🏕 What's the worst thing this could do to your operation? (We want his
-    nightmare scenario on record — it becomes a runbook entry.)
-    > 
+30. → camp section.
 
 ## 7. Business & authorization
 
-31. ⭐🏕 Production go-live needs THREE things on DSC's real GoTab account,
-    all learned from the sandbox: (a) the API integration authorized, (b)
-    the parent-location multi-vendor config enabled (GoTab had to switch
-    this on for our sandbox), (c) client-side payment credentials for the
-    wallet. Is authorizing that a Jon decision, a GoTab-rep conversation, or
-    both? Any ownership/franchise complication?
-    > 
+*Q31 moved to the camp section.*
 
 32. Are there other DSC systems in play we haven't heard of (loyalty,
     reservations, events calendar) that group ordering should not collide
@@ -275,9 +303,10 @@ after launch always get negotiated downward.*
   design already tolerates missing data — but we should KNOW, not infer).
 - Q13 may demote the availability sync from "trustworthy" to "best effort" —
   document either way.
-- Q21 (production parity) + Q31 together define the go-live checklist with
-  GoTab — fold into the Zach thread once answered.
-- Q22b + Q24b feed the open pay-before-fire invariant decision alongside
-  Zach's weekend payment findings — do not resolve the invariant before both
-  inputs exist.
+- Q21 (production parity) + camp Q31 together define the go-live checklist
+  with GoTab — fold into the Zach thread once answered.
+- The payment MODEL is decided (platform physics, Zach #6) — camp Q24b
+  validates it socially; Q22b (fees) + Q23 (DSC's real decline/walkaway
+  rate) calibrate settlement UX and risk posture around it.
 - Q28's thresholds go into roadmap 4.2 verbatim.
+- Camp answers get transcribed the SAME NIGHT — sideline answers evaporate.

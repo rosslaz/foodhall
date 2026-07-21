@@ -1855,11 +1855,13 @@ between your dishes — is what we minimize, and we measure it on every order."
   recovery story. Ten seconds, checks both processes.
 - **Volume ritual**: iPhone ring/silent switch OFF-mute AND media volume up
   (today's chime observation lost to mute).
-- **PENDING retest (volume up)**: (a) does the KDS chime fire while GoTops is
-  BACKGROUNDED (Safari in front), or only on foreground? If backgrounded =
-  deaf → staging rule: Ross's phone stays foregrounded on GoTops; Jon's phone
-  is the only diner (better choreography anyway). (b) chime audibility
-  outdoors.
+- ~~PENDING retest~~ **RESOLVED 07-19 (dress rehearsal, friction count 0,
+  clean two-vendor demo DB):** (a) GoTops does NOT chime while backgrounded
+  — STAGING LAW: Ross's iPhone is Motor's kitchen ONLY, GoTops foregrounded
+  + volume up for the whole demo; Jon's phone is the sole diner. (b) outdoor
+  audibility untested (rehearsal ran indoors) — residual, low-stakes: max
+  both volumes, huddle proximity, and the ticket APPEARING is the demo
+  moment; the chime is garnish.
 - Friction count this run: 5, all converted (worker→ritual, mute→ritual,
   WSL-URL noise→code, firewall→done-once, which-URL→startup log).
 - **No `test:gotab` during the demo window** — each run drops a real
@@ -2000,6 +2002,46 @@ client-tier creds provisioning — A–D ALL in the 07-15 morning email to Zach
 (findings-first structure); (E) customer_fee
 policy at DSC — Jon + config; (F) does initWallet accept a PARENT-location
 tab — sandbox verify once config lands.
+
+### ZACH REPLY #6 — 2026-07-19: fire-side CONTRACT-CONFIRMED; the payment
+model decided by platform physics
+
+1. **Fire side is now a platform CONTRACT, not a finding**: parent-tab =
+   "the intended model — one API call in, per-vendor tickets out, no
+   orchestration required"; the tab is a "durable container" for waves;
+   spotUuid in the append body is a DESIGNED hard requirement (spot resolved
+   first, rejects before side effects) — the adapter can rely on it.
+2. **⭐ BALANCE-DRIVEN AUTO-CLOSE (the decisive mechanic)**: a payment that
+   zeroes the balance AUTO-CLOSES the tab; closed tabs take NO more waves.
+   Consequence: **pay-everything-at-lock on one parent tab is STRUCTURALLY
+   IMPOSSIBLE** (full payment precedes the later waves → tab closes →
+   remaining vendors unappendable). The pay-before-fire invariant is decided
+   by platform physics, not by us.
+3. **No API authorization holds** (card-not-present) — the pre-auth variant
+   is out. The mechanism that survives: **card-on-file** — SDK vaults once
+   into a reusable multi-use payment method; platform supports
+   **stored-credential charges**.
+4. **THE SURVIVING MODEL (design target)**: member vaults card = COMMIT (no
+   money moves) → all-committed gates lock → waves fire on our timers →
+   after the FINAL wave, each member's stored credential is charged their
+   share → last charge zeroes balance → auto-close = end of meal. Properties:
+   ONE customer_fee per member (settle-at-end beats per-wave), natural tab
+   lifecycle, choreography rule = NO tab payments until the final wave is
+   appended. Q24b to Jon becomes social validation of the only viable
+   one-tab model. Accepted risk (Zach's "open-but-unsecured"): vaulted card
+   declines at settlement = the walkaway problem → Jon Q23 now load-bearing.
+5. **Still pending Zach-side**: split-pay / item_group_uuid threading (now
+   the charge-a-member's-SHARE mechanics question); client-creds timeline;
+   NEW — **Adyen sandbox alignment** (he raised it; DSC PRODUCTION runs
+   Adyen → aligning sandbox = representative testing + wallet surfaces fully
+   available in prod).
+6. Reply sent same day: confirmed the design target back in one paragraph +
+   three asks — (a) yes to Adyen setup, bundled with client-creds timeline;
+   (b) the partial-charge mechanics (charging a stored credential for a
+   member's share against the tab — payments endpoint amount? split-pay
+   groups?); (c) choreography sanity-check (appends need outstanding
+   balance — creation wave establishes it; zero tab payments until final
+   wave; last charge auto-closes as the intended end-of-meal).
 
 ### ZACH REPLY #5 — 2026-07-15: ledger answers + hold-vs-fire early reads
 
